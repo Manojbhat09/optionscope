@@ -1,2 +1,7 @@
 flask
 robin_stocks
+yfinance
+flask_cors
+tqdm
+pickle4
+pandas

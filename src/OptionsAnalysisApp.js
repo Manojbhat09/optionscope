@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, Select, MenuItem, TextField, Button, Typ
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import axios from 'axios';
 import TradingNotes from './tradingnotes'; // Import the TradingNotes component
+import StockPlot from './StockPlot';
 const theme = createTheme();
+
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -278,6 +280,11 @@ const OptionsTradingDashboard = () => {
   const [sliceStart, setSliceStart] = useState(0);
   const [sliceEnd, setSliceEnd] = useState(csvData.length);
   const [notes, setNotes] = useState('');
+  const [selectedTicker, setSelectedTicker] = useState('');
+  const [startStockPlotDate, setStartStockPlotDate] = useState('');
+  const [endStockPlotDate, setEndStockPlotDate] = useState('');
+  const [datespacingInput, setDatespacingInput] = useState('10');
+  const [displayPlot, setDisplayPlot] = useState(false);
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -304,8 +311,8 @@ const parseCSV = (csvString) => {
         startDate,
         endDate,
       });
-      //console.log('Response data:', response.data); // This will print in the browser console
-      //console.log("response recorded");
+      // console.log('Response data:', response.data); // This will print in the browser console
+      console.log("response recorded");
     
     // Check if the response is a string and parse it
     let parsedData;
@@ -369,7 +376,7 @@ const parseCSV = (csvString) => {
       const timeSeriesData = sortedData.map(trade => {
         let amount = 0;
         if (trade.Amount) {
- 	  //console.log("trade amount is ", trade.Amount, typwod )
+    //console.log("trade amount is ", trade.Amount, typwod )
          if (typeof trade.Amount === 'string') {
            amount = Number(trade.Amount.replace(/[^\d.-]/g, '')); // Convert the string to a number after removing non-numeric characters
            if (trade.Amount.startsWith('(')) {
@@ -452,6 +459,7 @@ const parseCSV = (csvString) => {
       amount: amount
     };
   });
+  const zerofilteredTransactionData = transactionData.filter(transaction => transaction.amount !== 0);
 
   const topProfitableTrades = profitLossData
     .filter(trade => trade.pl > 0)
@@ -506,6 +514,32 @@ const parseCSV = (csvString) => {
     ? holdingPeriodAnalysis.unprofitable.reduce((a, b) => a + b, 0) / holdingPeriodAnalysis.unprofitable.length
     : 0;
 
+
+const handleBarClick = (bar) => {
+  console.log("Bar clicked:", bar);
+  setDisplayPlot(false);
+  console.log(bar.activeTooltipIndex)
+  // Extract relevant data from the bar
+  const clickedBarData = bar.activePayload[0].payload;
+  const date =  new Date(clickedBarData.date);
+  const amount = clickedBarData.amount;
+  const label = clickedBarData.label;
+  const ticker = label.split(' - ')[1]; // Assuming the label is in the format "Date - Ticker"
+
+  // Update state or display additional information
+  setSelectedTicker(ticker); // Assuming you want to set the ticker based on the date
+  // setDisplayAdditionalInfo(true); // Toggle a state to display additional info
+
+  const datespacing = parseInt(datespacingInput) || 10; // Default to 10 days if not provided
+  const startStockPlotDate = new Date(date.getTime() - datespacing * 24 * 60 * 60 * 1000);
+  const endStockPlotDate = new Date(date.getTime() + datespacing * 24 * 60 * 60 * 1000);
+  console.log(startStockPlotDate.toISOString().split('T')[0])
+  console.log(endStockPlotDate.toISOString().split('T')[0])
+  setStartStockPlotDate(startStockPlotDate.toISOString().split('T')[0]);
+  setEndStockPlotDate(endStockPlotDate.toISOString().split('T')[0]);
+
+};
+
   return (
     <ThemeProvider theme={theme}>
       <div style={{ padding: '1rem' }}>
@@ -544,6 +578,30 @@ const parseCSV = (csvString) => {
           />
           <Button variant="contained" color="primary" onClick={handleFetchData}>
             Fetch Data
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              const clearCache = async () => {
+                try {
+                  const response = await axios.post('http://localhost:5000/api/clear-cache', {
+                    username,
+                    password,
+                    startDate,
+                    endDate,
+                  });
+                  console.log('Cache cleared and data refetched:', response.data);
+                  // Update your state to reflect the new data
+                  handleFetchData();
+                } catch (error) {
+                  console.error('Error clearing cache and refetching data:', error);
+                }
+              };
+              clearCache();
+            }}
+          >
+            Clear Cache
           </Button>
         </div>
 
@@ -729,9 +787,11 @@ const parseCSV = (csvString) => {
                   <MenuItem value="none">None</MenuItem>
                 </Select>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={transactionSort === 'asc' ? transactionData.sort((a, b) => a.amount - b.amount) :
-                    transactionSort === 'desc' ? transactionData.sort((a, b) => b.amount - a.amount) :
-                    transactionData}>
+                  <BarChart data={transactionSort === 'asc' ? zerofilteredTransactionData.sort((a, b) => a.amount - b.amount) :
+                    transactionSort === 'desc' ? zerofilteredTransactionData.sort((a, b) => b.amount - a.amount) :
+                    zerofilteredTransactionData}
+                    onClick={(bar) => handleBarClick(bar)} 
+                    >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />
@@ -743,6 +803,45 @@ const parseCSV = (csvString) => {
               </CardContent>
             </Card>
 
+            <Card style={{ marginTop: '1rem' }}>
+            <CardHeader title="Stock Price and Option Transactions" />
+            <CardContent>
+              <TextField
+                label="Stock Ticker"
+                value={selectedTicker}
+                onChange={(e) => setSelectedTicker(e.target.value)}
+                style={{ marginRight: '1rem' }}
+              />
+              <TextField
+                label="Date Spacing (days)"
+                value={datespacingInput}
+                onChange={(e) => setDatespacingInput(e.target.value)}
+                type="number"
+                style={{ marginRight: '1rem' }}
+              />
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => {
+                  if (selectedTicker && startStockPlotDate && endStockPlotDate) {
+                    // Ensure the plot is displayed
+                    setDisplayPlot(true);
+                  }
+                }}
+              >
+                Display Plot
+              </Button>
+              {displayPlot && (
+                <StockPlot
+                  username={username}
+                  password={password}
+                  ticker={selectedTicker}
+                  startDate={startStockPlotDate}
+                  endDate={endStockPlotDate}
+                />
+              )}
+            </CardContent>
+          </Card>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             {topProfitableTrades.length > 0 && (

@@ -52,7 +52,7 @@ Whether you're a seasoned options trader or just getting started, this tool help
 
 ### Prerequisites
 
-- **Node.js** (v14 or higher)
+- **Node.js** (v14 or higher) -> 18.12.1
 - **Python** (v3.6 or higher)
 - **Robinhood Account Credentials**
 
@@ -67,8 +67,9 @@ Whether you're a seasoned options trader or just getting started, this tool help
 2. Install dependencies:
    ```
    cd options-trading-dashboard
-   npm install
    pip install -r backend/requirements.txt
+   npm run build
+   npm install # make sure to use correct nodejs, 'nvm use 18.12.1' & 'npm audit --fix' 
    ```
 
 3. Start the development server:

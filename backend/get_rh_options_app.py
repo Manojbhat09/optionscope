@@ -126,4 +126,11 @@ def fetch_and_update_orders(username, password, start_date, end_date, csv_file=C
   try:
       return update_csv_cache(pd.to_datetime(start_date), pd.to_datetime(end_date), csv_file)
   finally:
-      logout_from_robinhood()
+      try:
+        logout_from_robinhood()
+      except Exception as e:
+        print("Failed logging out")
+
+def delete_cache(csv_file=CSV_FILE):
+  os.remove(csv_file)
+  os.remove(CACHE_FILE)

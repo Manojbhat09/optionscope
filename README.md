@@ -61,12 +61,12 @@ Whether you're a seasoned options trader or just getting started, this tool help
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/options-trading-dashboard.git
+   git clone git@github.com:Manojbhat09/optionscope.git
    ```
 
 2. Install dependencies:
    ```
-   cd options-trading-dashboard
+   cd optionscope
    pip install -r backend/requirements.txt
    npm run build
    npm install # make sure to use correct nodejs, 'nvm use 18.12.1' & 'npm audit --fix' 

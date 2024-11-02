@@ -27,8 +27,17 @@ Whether you're a seasoned options trader or just getting started, this tool help
 - Keep track of your thoughts and strategies with integrated note-taking.
 
 
+
 ## 🌟 Features
 
+___
+
+**🔮 Update**
+- **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard.
+  <div style="text-align: center;" align="center">
+      <img src="public/chatbot.jpg" alt="Chatbot Image" width="200"/>
+    </div>
+___
 
 - 📈 **Secure Data Fetching**: Log in with your Robinhood credentials to fetch your options trading history within a specified date range.
 - 🏆 **Comprehensive Analytics**:

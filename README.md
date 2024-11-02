@@ -35,7 +35,8 @@ ___
 **🔮 Update**
 - **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard.
   <div style="text-align: center;" align="center">
-      <img src="public/chatbot.jpg" alt="Chatbot Image" width="200"/>
+      <p></p>
+      <img src="public/chatbot.jpg" alt="Chatbot Image" width="900"/>
     </div>
 ___
 

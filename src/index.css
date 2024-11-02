@@ -11,3 +11,62 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+li {
+	list-style-type: none;
+  margin: 0;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+p {
+  margin: 0;
+  padding: 0;
+}
+/* Add this to your CSS file or within a <style> tag in your component */
+.tooltip-content {
+  background-color: #FFFFFF; /* White background */
+  padding: 0px; /* Add some padding for spacing */
+  border: 1px solid #000; /* Optional border */
+  border-radius: 5px; /* Optional rounded corners */
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* Optional shadow effect */
+}
+
+.tooltip-content ul {
+  /*list-style-type: none; *//* Remove default list styling */
+  padding: 0; /* Remove default padding */
+  margin: 0; /* Remove default margin */
+
+}
+
+.tooltip-content li {
+  margin-left: 10px;
+  margin-right: 10px;
+  margin-top: 10px;
+  margin-bottom: 5px; /* Add spacing between list items */
+}
+
+.tooltip-content li::before {
+  /*content: "\2022";*/ /* Use a bullet point symbol */
+  font-weight: bold; /* Make the bullet point bold */
+  display: inline-block; /* Display as an inline block */
+  width: 1em; /* Set the width to ensure proper spacing */
+  margin-left: 0em; /* Adjust the margin to align with text */
+}
+
+
+.analysis-space{
+  width: 95%;
+}
+
+.analysis-space.open {
+  width: 75%;
+}

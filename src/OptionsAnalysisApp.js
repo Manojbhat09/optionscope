@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef} from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { Card, CardContent, CardHeader, Select, MenuItem, TextField, Button, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from '@mui/material';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { LineChart,ScatterChart, Scatter, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import axios from 'axios';
 import TradingNotes from './tradingnotes'; // Import the TradingNotes component
 import StockPlot from './StockPlot';
+import Chatbot from './components/chatbot/Chatbot';
 const theme = createTheme();
-
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -28,122 +28,23 @@ function parseDescription(description) {
   const parts = description.split(' ');
   let instrument, desc = '', expiry, type, strike;
 
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
+   // Correctly parse the description
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
 
-    if (i === 0) {
-      instrument = part;
-    } else if (part.includes('/')) {
-      expiry = part;
-    } else if (part === 'Call' || part === 'Put') {
-      type = part;
-    } else if (part.startsWith('$')) {
-      strike = part.replace('$', '');
-    } else {
-      desc += part + ' ';
+      if (i === 0) {
+        instrument = part;
+      } else if (part.includes('/') || part.includes('-')) {
+        expiry = part;
+      } else if (part === 'Call' || part === 'Put' || part === 'call' || part === 'put') {
+        type = part;
+      } else if (!isNaN(parseFloat(part))) { // Check if the part is a number
+        strike = part;
+      }
     }
-  }
 
   return { instrument, expiry, type, strike };
 }
-
-// const calculateProfitLoss = (trades) => {
-//   const profitLoss = {};
-//   trades.forEach(trade => {
-//     if (!trade.Instrument || !trade.Description || !trade["Trans Code"]) return;
-
-//     const parts = trade.Description.split(' ');
-//     let instrument, desc = '', expiry, type, strike;
-
-//     for (let i = 0; i < parts.length; i++) {
-//       const part = parts[i];
-
-//       if (i === 0) {
-//         // instrument = part;
-//       } else if (part.includes('/')) {
-//         expiry = part;
-//       } else if (part === 'Call' || part === 'Put') {
-//         type = part;
-//       } else if (part.startsWith('$')) {
-//         strike = part.replace('$', '');
-//       } else {
-//         desc += part + ' ';
-//       }
-//     }
-
-//     if (!expiry || !type || !strike) return;
-
-//     const key = `${trade.Instrument}_${expiry}_${type}_${strike}`;
-//     if (!profitLoss[key]) {
-//       profitLoss[key] = {
-//         instrument: trade.Instrument,
-//         expiry,
-//         type,
-//         strike,
-//         buyQuantity: 0,
-//         sellQuantity: 0,
-//         buyAmount: 0,
-//         sellAmount: 0,
-//         pl: 0,
-//         openDate: null,
-//         closeDate: null,
-//         expiryDate: null,
-//         sign: 1,
-//         revenue: 0,
-//       };
-//     }
-
-//     const quantity = parseFloat(trade.Quantity) || 0;
-//     let amount = '0';
-//     if (typeof trade.Amount === 'string') {
-//       amount = Number(trade.Amount.replace(/[^\d.-]/g, '')); // Convert the string to a number after removing non-numeric characters
-//     } else {
-//       amount = trade.Amount; // Use the number as it is if it's already a number
-//     }
-//     amount = parseFloat(amount);
-
-//     const totalStrike = amount;
-//     const totalCost = amount;
-
-//     const date = new Date(trade["Activity Date"]);
-
-//     if (trade["Trans Code"] === "BTO") {
-//       profitLoss[key].buyQuantity += quantity;
-//       profitLoss[key].buyAmount += totalStrike;
-//       if (!profitLoss[key].openDate || date < profitLoss[key].openDate) {
-//         profitLoss[key].openDate = date;
-//       }
-//     } else if (trade["Trans Code"] === "STC") {
-//       profitLoss[key].sellQuantity += quantity;
-//       profitLoss[key].sellAmount += totalCost;
-//       if (!profitLoss[key].closeDate || date > profitLoss[key].closeDate) {
-//         profitLoss[key].closeDate = date;
-//       }
-//     }
-
-//     if (trade["Trans Code"] === "OEXP" || desc.toLowerCase().indexOf("exp") === 1) {
-//       profitLoss[key].sellAmount = 0;
-//       profitLoss[key].sellQuantity = profitLoss[key].buyQuantity;
-//       profitLoss[key].pl = profitLoss[key].sellAmount - profitLoss[key].buyAmount;
-//       profitLoss[key].expiryDate = new Date(trade["Process Date"]);
-//     }
-
-//     if (isNaN(profitLoss[key].sellAmount) || isNaN(profitLoss[key].buyAmount)) {
-//       console.error(`Invalid profit/loss calculation for trade: ${trade.Description}`);
-//       profitLoss[key].pl = 0;
-//     } else {
-//       profitLoss[key].pl = profitLoss[key].sellAmount - profitLoss[key].buyAmount;
-//     }
-
-//     profitLoss[key].revenue = profitLoss[key].sellAmount;
-
-//     if (profitLoss[key].pl > 0) {
-//       profitLoss[key].type = type;
-//     }
-//   });
-//   console.log(profitLoss);
-//   return Object.values(profitLoss);
-// };
 
 const calculateProfitLoss = (trades) => {
   const profitLoss = {};
@@ -205,6 +106,7 @@ const calculateProfitLoss = (trades) => {
         expiryDate: null,
         sign: 1,
         revenue: 0,
+        gainRatio: null
       };
     }
 
@@ -236,6 +138,10 @@ const calculateProfitLoss = (trades) => {
       if (!profitLoss[key].closeDate || date > profitLoss[key].closeDate) {
         profitLoss[key].closeDate = date;
       }
+      // Calculate gainRatio
+      if (profitLoss[key].buyAmount > 0) {
+        profitLoss[key].gainRatio = (profitLoss[key].sellAmount / profitLoss[key].buyAmount);
+      }
     }
 
     if (trade["Trans Code"] === "OEXP" || trade.Description.toLowerCase().includes("exp")) {
@@ -245,6 +151,12 @@ const calculateProfitLoss = (trades) => {
       profitLoss[key].pl = -profitLoss[key].buyAmount; // Update P/L for expired trades
       profitLoss[key].revenue = 0; // Set revenue to 0 for expired trades
       profitLoss[key].expiryDate = new Date(trade["Process Date"]);
+
+      if (profitLoss[key].buyAmount > 0) {
+        profitLoss[key].gainRatio = (profitLoss[key].sellAmount / profitLoss[key].buyAmount);
+      } else {
+        profitLoss[key].gainRatio = null; // Or handle it as per your requirement
+      }
     }
 
     if (isNaN(profitLoss[key].sellAmount) || isNaN(profitLoss[key].buyAmount)) {
@@ -263,7 +175,21 @@ const calculateProfitLoss = (trades) => {
   return Object.values(profitLoss);
 };
 
+// [1] ERROR: There was an issue loading pickle file. Authentication may be expired - logging in normally.
+// Enter Robinhood code for validation:
+
+// [1] ERROR: There was an issue loading pickle file. Authentication may be expired - logging in normally.
+// Please type in the MFA code: 485740
+
+// >>> import robin_stocks.robinhood as rh
+// >>> rh.login(username="", password="")
+// ERROR: There was an issue loading pickle file. Authentication may be expired - logging in normally.
+// Please type in the MFA code: 136493
+
+// for searching any text, use the browser search 
+
 const OptionsTradingDashboard = () => {
+  const dashboardRef = useRef(null);
   const [csvData, setCsvData] = useState([]);
   const [profitLossData, setProfitLossData] = useState([]);
   const [username, setUsername] = useState('');
@@ -285,6 +211,8 @@ const OptionsTradingDashboard = () => {
   const [endStockPlotDate, setEndStockPlotDate] = useState('');
   const [datespacingInput, setDatespacingInput] = useState('10');
   const [displayPlot, setDisplayPlot] = useState(false);
+  const [gainRatioData, setGainRatioData] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -364,12 +292,41 @@ const parseCSV = (csvString) => {
 
   useEffect(() => {
     if (csvData.length > 0) {
-      // console.log("csv : ", csvData)
       const slicedData = csvData.slice(sliceStart, sliceEnd);
-      // console.log("csv sliced: ", slicedData)
       const plData = calculateProfitLoss(slicedData);
       setProfitLossData(plData);
-      // console.log("csv profit loss: ", plData)
+      const gainRatioDataDates = plData.filter(trade => trade.gainRatio !== null)
+        .reduce((acc, trade) => {
+          const selectDate = trade.closeDate ? trade.closeDate : trade.expiryDate;
+          const date = new Date(selectDate).toLocaleDateString()
+          if (!acc[date]) {
+            acc[date] = [];
+          }
+          acc[date].push({
+            date: trade.closeDate,
+            gainRatio: trade.gainRatio,
+            ticker: trade.instrument,
+            optionDetails: `${trade.type} ${trade.expiry} ${trade.strike}`,
+          });
+          return acc;
+        }, {});
+
+        let gainRatioData;
+        if (gainRatioDataDates) {
+            gainRatioData = Object.entries(gainRatioDataDates)
+              .map(([date, trades]) => ({
+                date: date,
+                trades: trades,
+              }))
+              .sort((a, b) => a.date - b.date);
+          } else {
+            console.log("error in getting the gainratiodate right")
+            console.log(gainRatioDataDates)
+            gainRatioData = []; // Default to an empty array if gainRatioData is undefined
+          }
+
+      console.log(gainRatioData)
+      setGainRatioData(gainRatioData);
 
       const sortedData = slicedData.sort((a, b) => new Date(a["Activity Date"]) - new Date(b["Activity Date"]));
       let cumulativePL = 0;
@@ -540,9 +497,48 @@ const handleBarClick = (bar) => {
 
 };
 
+
+const scatterData = gainRatioData.flatMap(trade => trade.trades.map((t, index) => ({
+  date: trade.date, // Convert date to timestamp for plotting
+  gainRatio: t.gainRatio,
+  ticker: t.ticker,
+  optionDetails: t.optionDetails,
+  id: `${new Date(trade.date).toISOString()}${index}`, // Unique ID for each trade
+})));
+console.log(scatterData)
+
+
+const handleOpenChange = (isOpen) => {
+    setIsOpen(isOpen);
+  };
+
+const CustomTooltip = ({ active, payload }) => {
+  if (!active || !payload) return null;
+
+  console.log(active, payload);
+  let trade;
+  let datepayload;
+  datepayload = payload[0];
+  trade = payload[1];
+
+return (
+    <div className="tooltip-content">
+      <ul>
+      <li key={trade.payload.id}>
+            <p>Close-Date: {new Date(trade.payload.date).toLocaleDateString()} {new Date(trade.payload.date).toUTCString()}</p>
+            <p>{trade.payload.ticker} - {trade.payload.optionDetails}</p>
+            <p>Gain-Ratio: {trade.value}</p>
+          </li>
+        
+      </ul>
+    </div>
+  );
+};
+
+
   return (
     <ThemeProvider theme={theme}>
-      <div style={{ padding: '1rem' }}>
+      <div ref={dashboardRef} style={{ padding: '3rem' }} className={`analysis-space ${isOpen ? 'open' : ''}`} >
         <Typography variant="h4" gutterBottom>Options Trading Analysis Dashboard</Typography>
 
         <div style={{ marginBottom: '1rem' }}>
@@ -758,6 +754,8 @@ const handleBarClick = (bar) => {
               </CardContent>
             </Card>
 
+            
+
             <Card style={{ marginTop: '1rem' }}>
               <CardHeader title="Cumulative Profit/Loss Over Time" />
               <CardContent>
@@ -773,6 +771,23 @@ const handleBarClick = (bar) => {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+
+
+          <Card style={{ marginTop: '1rem' }}>
+          <CardHeader title="Gain Ratio (Buy/Sell price) Over Time" />
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <ScatterChart data={scatterData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date"   />
+                <YAxis />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Scatter data={scatterData} dataKey="gainRatio" type="number" fill="#82ca9d" />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
             <Card style={{ marginTop: '1rem' }}>
               <CardHeader title="Profit/Loss by Transaction" />
@@ -962,6 +977,7 @@ const handleBarClick = (bar) => {
           <Typography>Please upload a CSV file to view the dashboard.</Typography>
         )}
       </div>
+      <Chatbot dashboardRef={dashboardRef} onOpenChange={handleOpenChange} />
     </ThemeProvider>
   );
 };

@@ -5,3 +5,6 @@ flask_cors
 tqdm
 pickle4
 pandas
+dotenv
+requests
+

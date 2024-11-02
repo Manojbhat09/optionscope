@@ -131,10 +131,6 @@ const StockPlot = ({ username, password, ticker, startDate, endDate }) => {
   const minY = data.stockData.length > 0 ? Math.min(...data.stockData.map(item => item.Close)) : 0;
   const maxY = data.stockData.length > 0 ? Math.max(...data.stockData.map(item => item.Close)) : 0;
 
- // Convert option dates to ISO strings for matching
- // console.log("date data")
- //  console.log(parsedOptionData)
-
 // Convert stockData dates to ISO strings without time
   const stockDataWithDate = data.stockData.map(item => ({
     ...item,
@@ -174,16 +170,6 @@ const StockPlot = ({ username, password, ticker, startDate, endDate }) => {
 // Filter out options without a matching index
   const filteredOptionOpenDates = optionDatesWithOpenIndex.filter(option => option.index !== -1);
   const filteredOptionCloseDates = optionDatesWithCloseIndex.filter(option => option.index !== -1);
-
-  // console.log("stock data with date")
-  // console.log(stockDataWithDate)
-  // console.log("option dates with index")
-  // console.log(optionDatesWithIndex)
-  // // console.log("stock data")
-  // // console.log(data.stockData)
-  // console.log("filtered")
-  // console.log(filteredOptionOpenDates)
-  // y={option.price}
 
   // Custom legend content
   const customLegendContent = (

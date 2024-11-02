@@ -6,9 +6,13 @@ from flask_cors import CORS
 import pandas as pd 
 import numpy as np 
 import yfinance as yf
+from chatbot_service import chatbot_bp
+
 app = Flask(__name__)
 CORS(app)
 
+# Register the chatbot blueprint
+app.register_blueprint(chatbot_bp)
 
 '''
  Index(['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'], dtype='object')

@@ -33,7 +33,9 @@ Whether you're a seasoned options trader or just getting started, this tool help
 ___
 
 **🔮 Update**
-- **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard.
+- **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard. Knows your data & plots.
+  - Screenshots stored locally in `backend/screenshots` folder.
+  - Default model set to `meta-llama/llama-3.2-11b-vision-instruct:free` in `backend/chatbot_service.py`. Change as fit. 
   <div style="text-align: center;" align="center">
       <p></p>
       <img src="public/chatbot.jpg" alt="Chatbot Image" width="900"/>

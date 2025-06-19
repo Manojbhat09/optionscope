@@ -142,6 +142,21 @@ ___
 
 ## 🟢 Using with Node.js (e.g., React, Next.js Frontend)
 
+If you use `nvm` (Node Version Manager), you can update as follows:
+
+```bash
+nvm install --lts
+nvm use --lts
+node -v   # Should show v18.x, v20.x, etc.
+```
+
+Or, to get a specific version (example: v20):
+
+```bash
+nvm install 20
+nvm use 20
+```
+
 - You do **not** "install" Python code with Node. Instead, you run your backend and frontend separately, and connect them via HTTP APIs.
 - You can set up a Node.js frontend (React, Next.js, etc) in a separate folder, and call your Flask backend at `http://localhost:5000/api/...` endpoints.
     - For creating a React app:

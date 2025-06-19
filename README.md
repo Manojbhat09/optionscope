@@ -91,6 +91,79 @@ ___
 
 4. Open your browser and navigate to `http://localhost:3000`
 
+
+## 🚀 Elaborate Installing and Running the Flask Python Backend
+
+**Prerequisites:**
+- Python 3.7+ should be installed
+- Pip (Python package manager) should be available
+
+**Steps:**
+
+1. **Clone or Copy the Code**
+   - Place the backend code (the files you showed) in a directory on your machine.
+
+2. **Create a Virtual Environment** (recommended):
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install Python Dependencies:**
+   - You need to install Flask, Flask-CORS, pandas, numpy, robin_stocks, yfinance, python-dotenv, tqdm, pillow, requests (and possibly others).  
+   - The simplest way is to create a `requirements.txt` file or just run:
+     ```bash
+     pip install flask flask-cors pandas numpy yfinance robin_stocks python-dotenv tqdm pillow requests
+     ```
+   - If you already have a `requirements.txt` file, use:
+     ```bash
+     pip install -r requirements.txt
+     ```
+
+4. **Set Up Environment Variables:**  
+   - Create a `.env` file in your backend directory with the required variables, e.g.:
+     ```
+     REACT_APP_OPENROUTER_API_KEY=your_api_key_here
+     ```
+   - Replace `your_api_key_here` with your real key.
+   - Or use export and put in ~/.bashrc
+     ```
+     export REACT_APP_OPENROUTER_API_KEY=sk-
+     ```
+
+5. **Run the Flask App:**
+   ```bash
+   cd backend
+   python app.py
+   ```
+   - The server will run on `http://127.0.0.1:5000/` by default.
+
+---
+
+## 🟢 Using with Node.js (e.g., React, Next.js Frontend)
+
+- You do **not** "install" Python code with Node. Instead, you run your backend and frontend separately, and connect them via HTTP APIs.
+- You can set up a Node.js frontend (React, Next.js, etc) in a separate folder, and call your Flask backend at `http://localhost:5000/api/...` endpoints.
+    - For creating a React app:
+      ```bash
+      npx create-react-app frontend
+      cd frontend
+      npm start
+      ```
+    - Then, fetch data from your Flask backend using AJAX/fetch/axios in your React code.
+
+---
+
+## 🔗 Summary Table
+
+| Part        | How to install/run                | Notes                                     |
+|-------------|----------------------------------|-------------------------------------------|
+| Flask Backend | `pip install ...` then `python app.py` | Python 3, use a virtualenv, set .env      |
+| Node Frontend | `npm install`, `npm start` (if using) | Kept separate; frontend calls backend API |
+
+---
+
+
 ## 🖥️ Usage
 
 ### Fetching Data from Robinhood

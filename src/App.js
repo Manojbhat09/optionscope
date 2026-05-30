@@ -5,9 +5,12 @@ import TradeReplayDemo from './TradeReplayDemo';
 export default function App() {
   const [page, setPage]       = useState('dashboard');
   const [replayFilter, setRF] = useState({ ticker: 'All', minGR: 0 });
+  const [replayDates, setRD]  = useState({ startDate: '', endDate: '' });
 
   const goReplay = (filter = {}) => {
-    setRF({ ticker: 'All', minGR: 0, ...filter });
+    const { startDate, endDate, ...rest } = filter;
+    setRF({ ticker: 'All', minGR: 0, ...rest });
+    if (startDate || endDate) setRD({ startDate: startDate || '', endDate: endDate || '' });
     setPage('replay');
   };
 
@@ -17,10 +20,12 @@ export default function App() {
         <TradeReplayDemo
           onBack={() => setPage('dashboard')}
           initialFilter={replayFilter}
+          initialStartDate={replayDates.startDate || undefined}
+          initialEndDate={replayDates.endDate || undefined}
         />
       ) : (
         <>
-          <OptionsAnalysisApp onReplayTrade={goReplay} />
+          <OptionsAnalysisApp onReplayTrade={goReplay} onDatesChange={setRD} />
           <button
             onClick={() => goReplay()}
             style={{

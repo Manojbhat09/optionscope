@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   ComposedChart, ScatterChart, Scatter, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-  Legend, ReferenceArea, Customized,
+  Legend, ReferenceArea, Customized, Brush,
 } from 'recharts';
 
 const API = 'http://localhost:5000';
@@ -180,6 +180,39 @@ function saveJournal(trade, data) {
   localStorage.setItem(journalKey(trade), JSON.stringify(data));
 }
 
+// ── candlestick SVG layer (used as Customized child in ComposedChart) ─────────
+function CandlestickLayer({ xAxisMap, yAxisMap, data }) {
+  const xAxis = xAxisMap?.[0];
+  const yAxis = yAxisMap?.['price'];
+  if (!xAxis?.scale || !yAxis?.scale || !data?.length) return null;
+  const bw = xAxis.bandSize ?? 4;
+  const cw = Math.max(2, Math.min(bw * 0.65, 14));
+  return (
+    <g>
+      {data.map((d, i) => {
+        if (d.open == null || d.close == null) return null;
+        const cx = xAxis.scale(d.dt);
+        if (cx == null || isNaN(cx)) return null;
+        const yO = yAxis.scale(d.open);
+        const yC = yAxis.scale(d.close);
+        const yH = d.high != null ? yAxis.scale(d.high) : Math.min(yO, yC);
+        const yL = d.low  != null ? yAxis.scale(d.low)  : Math.max(yO, yC);
+        const isUp = d.close >= d.open;
+        const col  = isUp ? '#00c853' : '#e53935';
+        const bodyTop = Math.min(yO, yC);
+        const bodyH   = Math.max(1, Math.abs(yC - yO));
+        return (
+          <g key={i}>
+            <line x1={cx} y1={yH} x2={cx} y2={yL} stroke={col} strokeWidth={1} />
+            <rect x={cx - cw / 2} y={bodyTop} width={cw} height={bodyH}
+              fill={col} stroke={col} strokeWidth={0.5} />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // ── pattern stats sub-component ───────────────────────────────────────────────
 
 function PatternStats({ pattern, color, chipColor, onTickerClick }) {
@@ -245,9 +278,15 @@ function PatternStats({ pattern, color, chipColor, onTickerClick }) {
 // Main component
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }) {
+export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, initialStartDate, initialEndDate }) {
   const [username, setUsername]     = useState(localStorage.getItem('tr_user') || '');
   const [password, setPassword]     = useState(localStorage.getItem('tr_pass') || '');
+  const [startDate, setStartDate]   = useState(
+    initialStartDate || localStorage.getItem('tr_start') || '2023-01-01'
+  );
+  const [endDate, setEndDate]       = useState(
+    initialEndDate || localStorage.getItem('tr_end') || new Date().toISOString().slice(0, 10)
+  );
   const [trades, setTrades]         = useState(initialTrades || []);
   const [loadingTrades, setLT]      = useState(false);
   const [tradeError, setTE]         = useState('');
@@ -263,7 +302,17 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
   const [journal, setJournal]       = useState({});
   const [journalDirty, setJD]       = useState(false);
   const [news, setNews]             = useState(null);
-  const [loadingNews, setLN]        = useState(false);
+
+  const [chartType, setChartType]   = useState('line');  // 'line' | 'area' | 'candle'
+  const [overrideInterval, setOI]   = useState('auto');  // 'auto' | '1m' | '5m' | '15m' | '1h' | '1d'
+  const [priceBrush, setPriceBrush] = useState(null);    // { startIndex, endIndex }
+  const [rsiBrush,   setRsiBrush]   = useState(null);
+
+  // Provider API keys — persisted to localStorage so user only enters once
+  const [alpacaKey,    setAlpacaKey]    = useState(() => localStorage.getItem('alpaca_key')    || '');
+  const [alpacaSecret, setAlpacaSecret] = useState(() => localStorage.getItem('alpaca_secret') || '');
+  const [polygonKey,   setPolygonKey]   = useState(() => localStorage.getItem('polygon_key')   || '');
+  const [keysOpen,     setKeysOpen]     = useState(false);
 
   // ── compute positions ──────────────────────────────────────────────────────
   const positions = useMemo(() => computePositions(trades), [trades]);
@@ -346,9 +395,10 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
     try {
       localStorage.setItem('tr_user', username);
       localStorage.setItem('tr_pass', password);
+      localStorage.setItem('tr_start', startDate);
+      localStorage.setItem('tr_end',   endDate);
       const res = await axios.post(`${API}/api/fetch-data`, {
-        username, password, startDate: '2023-01-01',
-        endDate: new Date().toISOString().slice(0, 10),
+        username, password, startDate, endDate,
       });
       setTrades(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
@@ -357,30 +407,57 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
     setLT(false);
   };
 
-  // ── select a trade dot → fetch history ────────────────────────────────────
-  const selectTrade = useCallback(async (pos) => {
+  // Keys snapshot for API calls — read from state refs to always get latest value
+  const providerKeys = () => ({
+    ...(alpacaKey    ? { alpaca_key: alpacaKey }       : {}),
+    ...(alpacaSecret ? { alpaca_secret: alpacaSecret } : {}),
+    ...(polygonKey   ? { polygon_key: polygonKey }     : {}),
+  });
+
+  // ── select a trade dot → fetch history + news ─────────────────────────────
+  const selectTrade = useCallback(async (pos, interval) => {
     setSelected(pos);
     setHE('');
     setHistory(null);
     setNews(null);
     setJournal(loadJournal(pos));
     setJD(false);
+    setPriceBrush(null);
+    setRsiBrush(null);
 
     const openISO  = toISO(pos.openDate);
     const closeISO = toISO(pos.closeDate);
     if (!openISO || !closeISO) { setHE('Missing open/close date'); return; }
 
     setLH(true);
-    // Fetch stock history and news in parallel
     const [histRes, newsRes] = await Promise.allSettled([
-      axios.post(`${API}/api/stock-history`, { ticker: pos.ticker, start_date: openISO, end_date: closeISO }),
-      axios.post(`${API}/api/news`,          { ticker: pos.ticker, open_date: openISO, close_date: closeISO }),
+      axios.post(`${API}/api/stock-history`, {
+        ticker: pos.ticker, start_date: openISO, end_date: closeISO,
+        interval: interval || 'auto', ...providerKeys(),
+      }),
+      axios.post(`${API}/api/news`, { ticker: pos.ticker, open_date: openISO, close_date: closeISO }),
     ]);
     if (histRes.status === 'fulfilled') setHistory(histRes.value.data);
     else setHE(histRes.reason?.response?.data?.error || histRes.reason?.message);
     if (newsRes.status === 'fulfilled') setNews(newsRes.value.data);
     setLH(false);
   }, []);
+
+  // Re-fetch history (only) when interval override changes and a trade is selected
+  useEffect(() => {
+    if (!selected) return;
+    const openISO  = toISO(selected.openDate);
+    const closeISO = toISO(selected.closeDate);
+    if (!openISO || !closeISO) return;
+    setLH(true); setHE(''); setPriceBrush(null); setRsiBrush(null);
+    axios.post(`${API}/api/stock-history`, {
+      ticker: selected.ticker, start_date: openISO, end_date: closeISO,
+      interval: overrideInterval, ...providerKeys(),
+    }).then(r => setHistory(r.data))
+      .catch(e => setHE(e?.response?.data?.error || e.message))
+      .finally(() => setLH(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overrideInterval]);
 
   // ── save journal ───────────────────────────────────────────────────────────
   const saveJ = () => {
@@ -438,6 +515,38 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
     return [+(mn - pad).toFixed(2), +(mx + pad).toFixed(2)];
   }, [chartData]);
 
+  // RSI — Wilder smoothing; period adapts to available candles
+  const rsiData = useMemo(() => {
+    const period = chartData.length >= 30 ? 14 : chartData.length >= 10 ? 7 : 0;
+    if (period === 0 || chartData.length < period + 1) return [];
+    // build delta array (same length as chartData, first element null)
+    const deltas = chartData.map((c, i) => {
+      if (i === 0) return null;
+      const prev = chartData[i - 1].close; const curr = c.close;
+      return (prev !== null && curr !== null) ? curr - prev : null;
+    });
+    // seed first average from first `period` deltas (indices 1..period)
+    let avgGain = 0, avgLoss = 0;
+    for (let i = 1; i <= period; i++) {
+      if (deltas[i] === null) continue;
+      if (deltas[i] > 0) avgGain += deltas[i]; else avgLoss += Math.abs(deltas[i]);
+    }
+    avgGain /= period; avgLoss /= period;
+    const rsiArr = new Array(period).fill(null);
+    const rs0 = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+    rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs0)).toFixed(2));
+    for (let i = period + 1; i < chartData.length; i++) {
+      if (deltas[i] === null) { rsiArr.push(null); continue; }
+      const g = deltas[i] > 0 ? deltas[i] : 0;
+      const l = deltas[i] < 0 ? Math.abs(deltas[i]) : 0;
+      avgGain = (avgGain * (period - 1) + g) / period;
+      avgLoss = (avgLoss * (period - 1) + l) / period;
+      const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+      rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs)).toFixed(2));
+    }
+    return chartData.map((c, i) => ({ dt: c.dt, rsi: rsiArr[i] ?? null }));
+  }, [chartData]);
+
   const holdPnl = selected ? fmt(selected.pl) : '';
   const holdDays = selected?.openDate && selected?.closeDate
     ? Math.round((new Date(selected.closeDate) - new Date(selected.openDate)) / 86400000)
@@ -464,6 +573,10 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
           value={username} onChange={e => setUsername(e.target.value)} />
         <input style={styles.inp} type="password" placeholder="Password"
           value={password} onChange={e => setPassword(e.target.value)} />
+        <input style={{ ...styles.inp, width: 130 }} type="date"
+          value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <input style={{ ...styles.inp, width: 130 }} type="date"
+          value={endDate} onChange={e => setEndDate(e.target.value)} />
         <button style={styles.btn} onClick={loadTrades} disabled={loadingTrades}>
           {loadingTrades ? 'Loading…' : trades.length ? `Reload (${trades.length} rows)` : 'Load Trades'}
         </button>
@@ -657,14 +770,69 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
 
           {/* stock chart */}
           <div style={styles.chartSection}>
+            {/* ── settings bar ── */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+              {[['line','📈 Line'],['area','🏔 Area'],['candle','🕯 Candle']].map(([ct, label]) => (
+                <button key={ct} onClick={() => setChartType(ct)} style={{
+                  padding: '3px 12px', fontSize: 11, borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                  background: chartType === ct ? '#1565c0' : '#f0f4fa',
+                  color: chartType === ct ? '#fff' : '#555',
+                  border: chartType === ct ? '1px solid #1565c0' : '1px solid #dde3ee',
+                }}>{label}</button>
+              ))}
+              <div style={{ width: 1, height: 18, background: '#e0e0e0', margin: '0 4px' }} />
+              <span style={{ fontSize: 11, color: '#888' }}>Interval:</span>
+              {['auto','1m','5m','15m','1h','1d'].map(iv => (
+                <button key={iv} onClick={() => setOI(iv)} style={{
+                  padding: '3px 9px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
+                  background: overrideInterval === iv ? '#ff9800' : '#f5f5f5',
+                  color: overrideInterval === iv ? '#fff' : '#666',
+                  border: overrideInterval === iv ? '1px solid #ff9800' : '1px solid #e0e0e0',
+                  fontWeight: overrideInterval === iv ? 600 : 400,
+                }}>{iv}</button>
+              ))}
+              {history?.interval && (() => {
+                const degraded = history.requested_interval && history.interval !== history.requested_interval;
+                const providerLabel = history.provider && history.provider !== 'yfinance'
+                  ? ` · via ${history.provider}` : '';
+                const needsKey = degraded && history.provider === 'yfinance-fallback';
+                return (
+                  <>
+                    <span style={{ fontSize: 10, marginLeft: 4, color: degraded ? '#e53935' : '#aaa' }}>
+                      {degraded
+                        ? `⚠ ${history.requested_interval} unavailable → ${history.interval}${providerLabel}`
+                        : `(actual: ${history.interval}${providerLabel})`}
+                    </span>
+                    {needsKey && (
+                      <button onClick={() => setKeysOpen(true)} style={{
+                        marginLeft: 8, fontSize: 10, padding: '1px 8px', borderRadius: 4,
+                        background: '#fff3e0', border: '1px solid #ff9800', color: '#e65100',
+                        cursor: 'pointer', fontWeight: 600,
+                      }}>
+                        🔑 Add API key for {history.requested_interval} data ↓
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
             <div style={styles.sectionTitle}>
-              {selected.ticker} stock price · {history?.interval} candles
+              {selected.ticker} stock price · {history?.interval || '…'} candles
               {loadingHist && <span style={styles.loading}> Loading…</span>}
               {histError && <span style={styles.err}> {histError}</span>}
             </div>
 
             {chartWithVix.length > 0 && (
-              <ResponsiveContainer width="100%" height={320}>
+              <>
+              {priceBrush && (
+                <div style={{ textAlign: 'right', marginBottom: 4 }}>
+                  <button onClick={() => setPriceBrush(null)} style={styles.resetZoom}>
+                    ⟲ Reset zoom
+                  </button>
+                </div>
+              )}
+              <ResponsiveContainer width="100%" height={350}>
                 <ComposedChart data={chartWithVix} margin={{ top: 14, right: 60, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                   <XAxis dataKey="dt"
@@ -680,13 +848,24 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
                   <Tooltip content={<StockTip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
 
-                  {/* High-Low shaded band — hide from tooltip/legend */}
-                  <Area yAxisId="price" type="monotone" dataKey="high"
-                    stroke="none" fill="rgba(25,118,210,0.13)" connectNulls dot={false}
-                    legendType="none" tooltipType="none" activeDot={false} />
-                  <Area yAxisId="price" type="monotone" dataKey="low"
-                    stroke="none" fill="white" connectNulls dot={false}
-                    legendType="none" tooltipType="none" activeDot={false} />
+                  {/* High-Low shaded band — only in line/area modes */}
+                  {chartType !== 'candle' && (
+                    <Area yAxisId="price" type="monotone" dataKey="high"
+                      stroke="none" fill="rgba(25,118,210,0.13)" connectNulls dot={false}
+                      legendType="none" tooltipType="none" activeDot={false} />
+                  )}
+                  {chartType !== 'candle' && (
+                    <Area yAxisId="price" type="monotone" dataKey="low"
+                      stroke="none" fill="white" connectNulls dot={false}
+                      legendType="none" tooltipType="none" activeDot={false} />
+                  )}
+
+                  {/* Area fill under close — area mode only */}
+                  {chartType === 'area' && (
+                    <Area yAxisId="price" type="monotone" dataKey="close" name="Close"
+                      stroke="#1565c0" fill="rgba(21,101,192,0.12)"
+                      dot={false} strokeWidth={2} connectNulls />
+                  )}
 
                   {/* hold period shading */}
                   {buyDt && sellDt && (
@@ -706,13 +885,79 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
                       label={{ value: '▼ SELL', position: 'insideTopRight', fill: '#e53935', fontSize: 10, fontWeight: 700 }} />
                   )}
 
-                  <Line yAxisId="price" type="monotone" dataKey="close" name="Close"
-                    stroke="#1565c0" dot={false} strokeWidth={2.5} connectNulls />
+                  {/* Close line — line mode only (area mode uses Area above, candle skips) */}
+                  {chartType === 'line' && (
+                    <Line yAxisId="price" type="monotone" dataKey="close" name="Close"
+                      stroke="#1565c0" dot={false} strokeWidth={2.5} connectNulls />
+                  )}
+
+                  {/* Candlestick SVG layer */}
+                  {chartType === 'candle' && (
+                    <Customized component={CandlestickLayer} data={chartWithVix} />
+                  )}
+
                   <Line yAxisId="vix" type="monotone" dataKey="vix" name="VIX"
                     stroke="#ff9800" dot={false} strokeWidth={1.5}
                     strokeDasharray="4 2" connectNulls />
+
+                  <Brush dataKey="dt" height={26} travellerWidth={8}
+                    stroke="#90caf9" fill="#f0f4ff"
+                    startIndex={priceBrush?.startIndex ?? 0}
+                    endIndex={priceBrush?.endIndex ?? Math.max(0, chartWithVix.length - 1)}
+                    onChange={({ startIndex, endIndex }) => setPriceBrush({ startIndex, endIndex })}
+                    tickFormatter={() => ''} />
                 </ComposedChart>
               </ResponsiveContainer>
+              </>
+            )}
+
+            {/* RSI (14) panel */}
+            {rsiData.length > 0 && rsiData.some(d => d.rsi !== null) && (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, paddingLeft: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#7b1fa2' }}>
+                    RSI ({chartData.length >= 30 ? 14 : 7}) — overbought &gt;70 · oversold &lt;30
+                  </span>
+                  {rsiBrush && (
+                    <button onClick={() => setRsiBrush(null)} style={styles.resetZoom}>
+                      ⟲ Reset zoom
+                    </button>
+                  )}
+                </div>
+                <ResponsiveContainer width="100%" height={140}>
+                  <ComposedChart data={rsiData} margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
+                      tick={{ fontSize: 9, fill: '#888' }} interval="preserveStartEnd"
+                      axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} ticks={[30, 50, 70]}
+                      tick={{ fontSize: 9, fill: '#888' }} axisLine={false} tickLine={false}
+                      width={52} tickFormatter={v => v} />
+                    <Tooltip formatter={(v) => [v !== null ? v.toFixed(1) : '—', 'RSI']}
+                      contentStyle={{ fontSize: 11, borderRadius: 6, padding: '4px 10px' }} />
+                    {/* Overbought / oversold shaded zones */}
+                    <ReferenceArea y1={70} y2={100} fill="rgba(229,57,53,0.08)" stroke="none" />
+                    <ReferenceArea y1={0} y2={30} fill="rgba(0,200,83,0.08)" stroke="none" />
+                    <ReferenceLine y={70} stroke="#e53935" strokeDasharray="4 2" strokeWidth={1}
+                      label={{ value: 'OB', position: 'insideTopRight', fill: '#e53935', fontSize: 9 }} />
+                    <ReferenceLine y={30} stroke="#00c853" strokeDasharray="4 2" strokeWidth={1}
+                      label={{ value: 'OS', position: 'insideBottomRight', fill: '#00c853', fontSize: 9 }} />
+                    <ReferenceLine y={50} stroke="#ddd" strokeDasharray="2 2" strokeWidth={1} />
+                    {/* Mirror buy/sell lines */}
+                    {buyDt && <ReferenceLine x={buyDt} stroke="#00c853" strokeWidth={2} strokeDasharray="5 3" />}
+                    {sellDt && <ReferenceLine x={sellDt} stroke="#e53935" strokeWidth={2} strokeDasharray="5 3" />}
+                    <Line type="monotone" dataKey="rsi" name="RSI"
+                      stroke="#7b1fa2" dot={false} strokeWidth={2} connectNulls />
+
+                    <Brush dataKey="dt" height={22} travellerWidth={8}
+                      stroke="#ce93d8" fill="#f9f0ff"
+                      startIndex={rsiBrush?.startIndex ?? 0}
+                      endIndex={rsiBrush?.endIndex ?? Math.max(0, rsiData.length - 1)}
+                      onChange={({ startIndex, endIndex }) => setRsiBrush({ startIndex, endIndex })}
+                      tickFormatter={() => ''} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
 
@@ -737,11 +982,10 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
           })()}
 
           {/* news context */}
-          {(news?.items?.length > 0 || loadingNews) && (
+          {news?.items?.length > 0 && (
             <div style={styles.newsSection}>
               <div style={styles.sectionTitle}>
                 📰 News Context
-                {loadingNews && <span style={styles.loading}> fetching…</span>}
                 <span style={{ fontWeight: 400, color: '#888', fontSize: 11, marginLeft: 8 }}>
                   headlines around your trade dates · may not be historical for older trades
                 </span>
@@ -863,6 +1107,68 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter }
             </div>
           </div>
 
+          {/* ── Provider API keys panel ── */}
+          <div style={styles.keysSection}>
+            <button onClick={() => setKeysOpen(o => !o)} style={styles.keysToggle}>
+              🔑 Intraday Data Provider Keys {keysOpen ? '▲' : '▼'}
+              <span style={{ fontWeight: 400, marginLeft: 8, color: '#888' }}>
+                {alpacaKey ? '· Alpaca ✓' : ''}{polygonKey ? ' · Polygon ✓' : ''}
+                {!alpacaKey && !polygonKey ? '· not configured — 1h/5m data uses yfinance fallback' : ''}
+              </span>
+            </button>
+
+            {keysOpen && (
+              <div style={styles.keysBody}>
+                <p style={styles.keysInfo}>
+                  <strong>Alpaca</strong> (recommended · free) — sign up at <em>alpaca.markets</em> → paper account → API Keys.
+                  Gives 1h candles back to 2016 for TSLA, NVDA, SPY and all major US stocks.
+                </p>
+                <div style={styles.keysRow}>
+                  <label style={styles.keysLabel}>Alpaca API Key</label>
+                  <input style={styles.keysInput} type="text" placeholder="PK…"
+                    value={alpacaKey}
+                    onChange={e => { setAlpacaKey(e.target.value); localStorage.setItem('alpaca_key', e.target.value); }} />
+                  <label style={styles.keysLabel}>Alpaca Secret</label>
+                  <input style={styles.keysInput} type="password" placeholder="••••••••"
+                    value={alpacaSecret}
+                    onChange={e => { setAlpacaSecret(e.target.value); localStorage.setItem('alpaca_secret', e.target.value); }} />
+                </div>
+
+                <p style={{ ...styles.keysInfo, marginTop: 10 }}>
+                  <strong>Polygon.io</strong> (backup · free) — free key at <em>polygon.io</em>.
+                  Covers ~2 years of 1h data (sufficient for 2023+ trades).
+                </p>
+                <div style={styles.keysRow}>
+                  <label style={styles.keysLabel}>Polygon API Key</label>
+                  <input style={styles.keysInput} type="text" placeholder="API key…"
+                    value={polygonKey}
+                    onChange={e => { setPolygonKey(e.target.value); localStorage.setItem('polygon_key', e.target.value); }} />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                  <button style={styles.btn} onClick={() => {
+                    if (selected) {
+                      const openISO  = toISO(selected.openDate);
+                      const closeISO = toISO(selected.closeDate);
+                      setLH(true); setHE('');
+                      axios.post(`${API}/api/stock-history`, {
+                        ticker: selected.ticker, start_date: openISO, end_date: closeISO,
+                        interval: overrideInterval, ...providerKeys(),
+                      }).then(r => setHistory(r.data))
+                        .catch(e => setHE(e?.response?.data?.error || e.message))
+                        .finally(() => setLH(false));
+                    }
+                  }}>
+                    ↻ Re-fetch with new keys
+                  </button>
+                  <span style={{ fontSize: 11, color: '#aaa', alignSelf: 'center' }}>
+                    Keys are saved in your browser — never sent anywhere except directly to the provider API.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
     </div>
@@ -977,6 +1283,25 @@ const styles = {
   newsSection:    { padding: '14px 20px', borderTop: '1px solid #f0f0f0', background: '#fafefe' },
   similarSection: { padding: '14px 20px', borderTop: '1px solid #f0f0f0', background: '#fafafa' },
   journalSection: { padding: '16px 20px 20px', borderTop: '1px solid #f0f0f0' },
+  resetZoom: {
+    fontSize: 11, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
+    background: '#e3f2fd', border: '1px solid #90caf9', color: '#1565c0', fontWeight: 600,
+  },
+  keysSection: { borderTop: '1px solid #f0f0f0', background: '#fafafa' },
+  keysToggle: {
+    width: '100%', textAlign: 'left', padding: '12px 20px',
+    background: 'none', border: 'none', cursor: 'pointer',
+    fontSize: 13, fontWeight: 600, color: '#555',
+  },
+  keysBody: { padding: '0 20px 16px', display: 'flex', flexDirection: 'column', gap: 4 },
+  keysInfo: { fontSize: 12, color: '#666', margin: '4px 0' },
+  keysRow: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  keysLabel: { fontSize: 11, color: '#888', whiteSpace: 'nowrap' },
+  keysInput: {
+    flex: '1 1 200px', padding: '5px 10px', fontSize: 12,
+    border: '1px solid #ddd', borderRadius: 6, outline: 'none',
+    background: '#fff', fontFamily: 'monospace',
+  },
   journalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 },
   journalLabel: { display: 'flex', flexDirection: 'column', gap: 4 },
   journalQ: { fontSize: 12, fontWeight: 600, color: '#555' },

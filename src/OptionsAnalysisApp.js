@@ -9,6 +9,7 @@ import Chatbot from './components/chatbot/Chatbot';
 import PnLCalendar from './components/PnLCalendar';
 const theme = createTheme();
 
+// eslint-disable-next-line no-unused-vars
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
   const headers = lines[0].split(',');
@@ -27,7 +28,7 @@ const parseCSV = (csvString) => {
 
 function parseDescription(description) {
   const parts = description.split(' ');
-  let instrument, desc = '', expiry, type, strike;
+  let instrument, desc = '', expiry, type, strike; // eslint-disable-line no-unused-vars
 
    // Correctly parse the description
     for (let i = 0; i < parts.length; i++) {
@@ -189,7 +190,7 @@ const calculateProfitLoss = (trades) => {
 
 // for searching any text, use the browser search 
 
-const OptionsTradingDashboard = ({ onReplayTrade }) => {
+const OptionsTradingDashboard = ({ onReplayTrade, onDatesChange }) => {
   const dashboardRef = useRef(null);
   const [csvData, setCsvData] = useState([]);
   const [profitLossData, setProfitLossData] = useState([]);
@@ -200,8 +201,8 @@ const OptionsTradingDashboard = ({ onReplayTrade }) => {
   const [instrumentSort, setInstrumentSort] = useState('none');
   const [revenueSort, setRevenueSort] = useState('none');
   const [transactionSort, setTransactionSort] = useState('none');
-  const [selectedInstrument, setSelectedInstrument] = useState('All');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [selectedInstrument, setSelectedInstrument] = useState('All'); // eslint-disable-line no-unused-vars
+  const [dateRange, setDateRange] = useState({ start: '', end: '' }); // eslint-disable-line no-unused-vars
   const [file, setFile] = useState(null);
   const [timeSeriesData, setTimeSeriesData] = useState([]);
   const [sliceStart, setSliceStart] = useState(0);
@@ -214,6 +215,8 @@ const OptionsTradingDashboard = ({ onReplayTrade }) => {
   const [displayPlot, setDisplayPlot] = useState(false);
   const [gainRatioData, setGainRatioData] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -233,6 +236,8 @@ const parseCSV = (csvString) => {
 
 
   const handleFetchData = async () => {
+    setIsFetching(true);
+    setFetchError('');
     try {
       const response = await axios.post('http://localhost:5000/api/fetch-data', {
         username,
@@ -269,14 +274,18 @@ const parseCSV = (csvString) => {
     
     } catch (error) {
       console.error('Error fetching data:', error);
+      setFetchError(error?.response?.data?.error || error.message || 'Fetch failed');
+    } finally {
+      setIsFetching(false);
     }
   };
 
-
+  // eslint-disable-next-line no-unused-vars
   const handleFileUpload = (event) => {
     setFile(event.target.files[0]);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleFileSubmit = () => {
     if (file) {
       const reader = new FileReader();
@@ -290,6 +299,11 @@ const parseCSV = (csvString) => {
       reader.readAsText(file);
     }
   };
+
+  // Notify parent whenever dates change so Trade Replay can pre-fill them
+  useEffect(() => {
+    if (onDatesChange) onDatesChange({ startDate, endDate });
+  }, [startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (csvData.length > 0) {
@@ -365,7 +379,7 @@ const parseCSV = (csvString) => {
   }, [notes]);
 
   const slicedData = csvData.slice(sliceStart, sliceEnd);
-  const instruments = ['All', ...new Set(slicedData.map(row => row.Instrument))];
+  const instruments = ['All', ...new Set(slicedData.map(row => row.Instrument))]; // eslint-disable-line no-unused-vars
 
   const filteredData = slicedData.filter(row =>
     (selectedInstrument === 'All' || row.Instrument === selectedInstrument) &&
@@ -464,10 +478,12 @@ const parseCSV = (csvString) => {
     return acc;
   }, { profitable: [], unprofitable: [] });
 
+  // eslint-disable-next-line no-unused-vars
   const avgProfitableHoldingPeriod = holdingPeriodAnalysis.profitable.length > 0
     ? holdingPeriodAnalysis.profitable.reduce((a, b) => a + b, 0) / holdingPeriodAnalysis.profitable.length
     : 0;
 
+  // eslint-disable-next-line no-unused-vars
   const avgUnprofitableHoldingPeriod = holdingPeriodAnalysis.unprofitable.length > 0
     ? holdingPeriodAnalysis.unprofitable.reduce((a, b) => a + b, 0) / holdingPeriodAnalysis.unprofitable.length
     : 0;
@@ -480,7 +496,7 @@ const handleBarClick = (bar) => {
   // Extract relevant data from the bar
   const clickedBarData = bar.activePayload[0].payload;
   const date =  new Date(clickedBarData.date);
-  const amount = clickedBarData.amount;
+  const amount = clickedBarData.amount; // eslint-disable-line no-unused-vars
   const label = clickedBarData.label;
   const ticker = label.split(' - ')[1]; // Assuming the label is in the format "Date - Ticker"
 
@@ -513,12 +529,13 @@ const handleOpenChange = (isOpen) => {
     setIsOpen(isOpen);
   };
 
+// eslint-disable-next-line no-unused-vars
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload) return null;
 
   console.log(active, payload);
   let trade;
-  let datepayload;
+  let datepayload; // eslint-disable-line no-unused-vars
   datepayload = payload[0];
   trade = payload[1];
 
@@ -539,10 +556,10 @@ return (
 
   return (
     <ThemeProvider theme={theme}>
-      <div ref={dashboardRef} style={{ padding: '3rem' }} className={`analysis-space ${isOpen ? 'open' : ''}`} >
+      <div ref={dashboardRef} style={{ padding: '1rem 1.5rem' }} className={`analysis-space ${isOpen ? 'open' : ''}`} >
         <Typography variant="h4" gutterBottom>Options Trading Analysis Dashboard</Typography>
 
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '0.5rem' }}>
           <TextField
             type="text"
             label="Username"
@@ -573,9 +590,15 @@ return (
             InputLabelProps={{ shrink: true }}
             style={{ marginRight: '1rem' }}
           />
-          <Button variant="contained" color="primary" onClick={handleFetchData}>
-            Fetch Data
+          <Button variant="contained" color="primary" onClick={handleFetchData}
+            disabled={isFetching}>
+            {isFetching ? 'Fetching…' : 'Fetch Data'}
           </Button>
+          {fetchError && (
+            <span style={{ color: '#e53935', fontSize: 12, marginLeft: 8 }}>
+              {fetchError}
+            </span>
+          )}
           <Button
             variant="contained"
             color="primary"
@@ -607,7 +630,7 @@ return (
 
         {csvData.length > 0 ? (
           <>
-            <div style={{ marginBottom: '1rem' }}>
+            <div style={{ marginBottom: '0.5rem' }}>
               <Typography>Start Row: {sliceStart}</Typography>
               <input
                 type="range"
@@ -634,7 +657,7 @@ return (
               <Typography>Showing rows {sliceStart} to {sliceEnd} of {csvData.length}</Typography>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <Card>
                 <CardHeader title="Total Profit/Loss" />
                 <CardContent>
@@ -673,7 +696,7 @@ return (
               </Card>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1fr', gap: '0.5rem' }}>
               <Card>
                 <CardHeader title="Profit/Loss by Instrument" />
                 <CardContent>
@@ -686,7 +709,7 @@ return (
                     <MenuItem value="desc">Descending</MenuItem>
                     <MenuItem value="none">None</MenuItem>
                   </Select>
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={instrumentSort === 'asc' ? sortedPlByInstrument.sort((a, b) => a.pl - b.pl) :
                       instrumentSort === 'desc' ? sortedPlByInstrument.sort((a, b) => b.pl - a.pl) :
                       sortedPlByInstrument}>
@@ -704,15 +727,15 @@ return (
               <Card>
                 <CardHeader title="Profit/Loss by Option Type" />
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                       <Pie
                         data={Object.entries(plByType).map(([type, pl]) => ({ type, pl: pl.pl, sign: pl.sign }))}
                         dataKey="pl"
                         nameKey="type"
                         cx="50%"
-                        cy="50%"
-                        outerRadius={100}
+                        cy="45%"
+                        outerRadius={70}
                         fill="#8884d8"
                         label={(entry) => `${entry.type}: ${entry.sign === 1 ? '+' : '-'}${Math.abs(entry.pl)}`}
                       >
@@ -740,7 +763,7 @@ return (
                   <MenuItem value="desc">Descending</MenuItem>
                   <MenuItem value="none">None</MenuItem>
                 </Select>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={revenueSort === 'asc' ? sortedPlByRevenue.sort((a, b) => a.revenue - b.revenue) :
                     revenueSort === 'desc' ? sortedPlByRevenue.sort((a, b) => b.revenue - a.revenue) :
                     sortedPlByRevenue}>
@@ -757,10 +780,10 @@ return (
 
             
 
-            <Card style={{ marginTop: '1rem' }}>
+            <Card style={{ marginTop: '0.5rem' }}>
               <CardHeader title="Cumulative Profit/Loss Over Time" />
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={timeSeriesData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
@@ -774,7 +797,7 @@ return (
             </Card>
 
 
-          <Card style={{ marginTop: '1rem' }}>
+          <Card style={{ marginTop: '0.5rem' }}>
           <CardHeader title="Gain Ratio (Buy/Sell price) Over Time" />
           <CardContent>
             {onReplayTrade && (
@@ -783,12 +806,12 @@ return (
                 💡 Click any dot to open Trade Replay for that ticker
               </p>
             )}
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={200}>
               <ScatterChart data={scatterData}
                 onClick={(e) => {
                   if (!onReplayTrade || !e?.activePayload?.[0]) return;
                   const d = e.activePayload[0].payload;
-                  onReplayTrade({ ticker: d.ticker || 'All', minGR: 0 });
+                  onReplayTrade({ ticker: d.ticker || 'All', minGR: 0, startDate, endDate });
                 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
@@ -814,7 +837,7 @@ return (
           </CardContent>
         </Card>
 
-            <Card style={{ marginTop: '1rem' }}>
+            <Card style={{ marginTop: '0.5rem' }}>
               <CardHeader title="Profit/Loss by Transaction" />
               <CardContent>
                 <Typography variant="body1">Sort by Profit/Loss:</Typography>
@@ -826,7 +849,7 @@ return (
                   <MenuItem value="desc">Descending</MenuItem>
                   <MenuItem value="none">None</MenuItem>
                 </Select>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={transactionSort === 'asc' ? zerofilteredTransactionData.sort((a, b) => a.amount - b.amount) :
                     transactionSort === 'desc' ? zerofilteredTransactionData.sort((a, b) => b.amount - a.amount) :
                     zerofilteredTransactionData}
@@ -843,7 +866,7 @@ return (
               </CardContent>
             </Card>
 
-            <Card style={{ marginTop: '1rem' }}>
+            <Card style={{ marginTop: '0.5rem' }}>
             <CardHeader title="Stock Price and Option Transactions" />
             <CardContent>
               <TextField
@@ -883,9 +906,9 @@ return (
             </CardContent>
           </Card>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
             {topProfitableTrades.length > 0 && (
-              <Card style={{ marginTop: '1rem' }}>
+              <Card style={{ marginTop: '0.5rem' }}>
                 <CardHeader title="Top Profitable Trades" />
                 <CardContent>
                   <table style={{ width: '100%' }}>
@@ -915,7 +938,7 @@ return (
             )}
 
             {topLossMakingTrades.length > 0 && (
-              <Card style={{ marginTop: '1rem' }}>
+              <Card style={{ marginTop: '0.5rem' }}>
                 <CardHeader title="Top Loss-Making Trades" />
                 <CardContent>
                   <table style={{ width: '100%' }}>
@@ -949,7 +972,7 @@ return (
 
             <TradingNotes />
 
-            <Card style={{ marginTop: '1rem' }}>
+            <Card style={{ marginTop: '0.5rem' }}>
               <CardHeader title="All Trades" />
               <CardContent>
                 <TableContainer component={Paper} style={{ maxHeight: 400 }}>

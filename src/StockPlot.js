@@ -29,7 +29,7 @@ const parseOptionData = (trades) => {
       const part = parts[i];
 
       if (i === 0) {
-        instrument = part;
+        instrument = part; // eslint-disable-line no-unused-vars
       } else if (part.includes('/') || part.includes('-')) {
         expiry = part;
       } else if (part === 'Call' || part === 'Put' || part === 'call' || part === 'put') {
@@ -142,12 +142,12 @@ const StockPlot = ({ username, password, ticker, startDate, endDate }) => {
     return stockDataWithDate.findIndex(item => item.Datetime === date);
   };
   const findDatetime = (date) => {
-    if(stockDataWithDate.findIndex(item => item.Datetime === date) == -1)
+    if(stockDataWithDate.findIndex(item => item.Datetime === date) === -1)
       return -1
     return data.stockData[stockDataWithDate.findIndex(item => item.Datetime === date)]['Datetime'];
   };
   const findValue = (date) => {
-    if(stockDataWithDate.findIndex(item => item.Datetime === date) == -1)
+    if(stockDataWithDate.findIndex(item => item.Datetime === date) === -1)
       return -1
     return stockDataWithDate[stockDataWithDate.findIndex(item => item.Datetime === date)]['Close'];
   };

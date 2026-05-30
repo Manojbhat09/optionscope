@@ -6,6 +6,7 @@ import axios from 'axios';
 import TradingNotes from './tradingnotes'; // Import the TradingNotes component
 import StockPlot from './StockPlot';
 import Chatbot from './components/chatbot/Chatbot';
+import PnLCalendar from './components/PnLCalendar';
 const theme = createTheme();
 
 const parseCSV = (csvString) => {
@@ -188,14 +189,14 @@ const calculateProfitLoss = (trades) => {
 
 // for searching any text, use the browser search 
 
-const OptionsTradingDashboard = () => {
+const OptionsTradingDashboard = ({ onReplayTrade }) => {
   const dashboardRef = useRef(null);
   const [csvData, setCsvData] = useState([]);
   const [profitLossData, setProfitLossData] = useState([]);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [startDate, setStartDate] = useState('2023-01-01');
-  const [endDate, setEndDate] = useState('2023-12-31');
+  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [instrumentSort, setInstrumentSort] = useState('none');
   const [revenueSort, setRevenueSort] = useState('none');
   const [transactionSort, setTransactionSort] = useState('none');
@@ -543,7 +544,7 @@ return (
 
         <div style={{ marginBottom: '1rem' }}>
           <TextField
-            type="password"
+            type="text"
             label="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -776,14 +777,38 @@ return (
           <Card style={{ marginTop: '1rem' }}>
           <CardHeader title="Gain Ratio (Buy/Sell price) Over Time" />
           <CardContent>
+            {onReplayTrade && (
+              <p style={{ fontSize: 12, color: '#1976d2', margin: '0 0 8px',
+                         background: '#e3f2fd', padding: '6px 10px', borderRadius: 6 }}>
+                💡 Click any dot to open Trade Replay for that ticker
+              </p>
+            )}
             <ResponsiveContainer width="100%" height={300}>
-              <ScatterChart data={scatterData}>
+              <ScatterChart data={scatterData}
+                onClick={(e) => {
+                  if (!onReplayTrade || !e?.activePayload?.[0]) return;
+                  const d = e.activePayload[0].payload;
+                  onReplayTrade({ ticker: d.ticker || 'All', minGR: 0 });
+                }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date"   />
+                <XAxis dataKey="date" />
                 <YAxis />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={{ background:'rgba(20,20,20,.88)', color:'#fff',
+                      padding:'8px 12px', borderRadius:6, fontSize:12, lineHeight:1.7 }}>
+                      <strong>Close-Date: {d.date}</strong><br />
+                      {d.ticker} - {d.optionDetails}<br />
+                      Gain-Ratio: {d.gainRatio}<br />
+                      {onReplayTrade && <span style={{ color:'#90caf9' }}>Click to replay →</span>}
+                    </div>
+                  );
+                }} />
                 <Legend />
-                <Scatter data={scatterData} dataKey="gainRatio" type="number" fill="#82ca9d" />
+                <Scatter data={scatterData} dataKey="gainRatio" type="number" fill="#82ca9d"
+                  style={{ cursor: onReplayTrade ? 'pointer' : 'default' }} />
               </ScatterChart>
             </ResponsiveContainer>
           </CardContent>
@@ -919,6 +944,8 @@ return (
               </Card>
             )}
             </div>
+
+            <PnLCalendar trades={slicedData} />
 
             <TradingNotes />
 

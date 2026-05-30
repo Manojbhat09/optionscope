@@ -32,10 +32,62 @@ Whether you're a seasoned options trader or just getting started, this tool help
 
 ___
 
-**🔮 Update**
+**🔮 Update — Trade Replay**
+
+> Click any dot on the Gain Ratio scatter (or the 🔄 button) to open the Trade Replay panel.
+
+  <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/four.jpg" alt="Image4" width="900"/>
+    </div>
+
+
+Learn *why* your best trades worked — and why your worst trades failed — by replaying any closed position against the stock chart with your exact buy and sell timestamps marked.
+
+  <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/one.jpg" alt="Image1" width="900"/>
+    </div>
+
+  <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/two.jpg" alt="Image2" width="900"/>
+    </div>
+
+  <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/three.jpg" alt="Image3" width="900"/>
+    </div>
+
+**What Trade Replay shows you:**
+
+- **Stock price chart** at the finest available granularity (5-minute candles for recent trades, 1-hour for older ones) spanning your entire hold period — with ▲ BUY and ▼ SELL lines marked
+- **High-Low shaded band** so you can see the full daily price range, not just close
+- **VIX overlay** on the right axis — see if you entered when volatility (premium) was cheap or expensive
+- **Win/Loss Fingerprint** — side-by-side comparison of your 2x+ gain trades vs your worst losses, showing top tickers, preferred option type, average DTE at entry, average hold time, and average P&L
+- **Top 15 wins and losses table** — sortable by gain ratio, P&L, or hold time; click any row to replay that trade
+- **Similar trades** — instantly see all your other positions on the same ticker and option type, with their outcomes
+- **News context** — Yahoo Finance headlines for that ticker around your trade dates
+- **Trade Journal** — four structured prompts (thesis, entry signal, exit reason, lessons) saved locally per trade so you can build a personal playbook over time
+
+**Key insight the fingerprint reveals:** your winning pattern (2DTE short puts on TSLA/NVDA) vs your losing pattern (0DTE SPY puts) — the DTE difference is often the single biggest variable separating wins from losses.
+
+___
+
+**🔮 Update — P&L Calendar**
+
+Daily, weekly, monthly, and yearly P&L grids with green/red cells and dollar amounts. Click the view tabs above the bar chart to switch. Share any period on X with one click.
+
+ <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/five.jpg" alt="Image5" width="900"/>
+    </div>
+___
+
+**🔮 Update — Chatbot**
 - **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard. Knows your data & plots.
+  - Supports **Anthropic Claude**, **OpenAI GPT-4o**, and **OpenRouter** (free Llama models) — switch providers and paste your API key directly in the chat UI
   - Screenshots stored locally in `backend/screenshots` folder.
-  - Default model set to `meta-llama/llama-3.2-11b-vision-instruct:free` in `backend/chatbot_service.py`. Change as fit. 
   <div style="text-align: center;" align="center">
       <p></p>
       <img src="public/chatbot.jpg" alt="Chatbot Image" width="900"/>
@@ -60,6 +112,34 @@ ___
 - 💾 **CSV Upload Option**: Alternatively, upload your trading data via CSV if you prefer not to connect your Robinhood account.
 - 💹 **Responsive Design**: Access the dashboard from desktop or mobile devices.
 
+
+┌────────────────────────────────────────────────────────────────┬────────┐
+│                            Feature                             │ Status │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Scatter (855 trades, green/red, size-scaled)                   │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Win + Loss Fingerprint side-by-side                            │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Top 15 wins/losses table (sortable, clickable rows)            │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Stock chart — adaptive granularity (5m for recent, 1d for old) │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ High-Low shaded band + Close line                              │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ VIX overlay + context interpretation                           │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ BUY/SELL reference line markers                                │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ News context (current headlines, bucketed entry/exit/context)  │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Similar trades table (same ticker+type, clickable)             │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Trade Journal (4 prompts, per-trade localStorage)              │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Auto-load on mount when credentials are cached                 │ ✅     │
+├────────────────────────────────────────────────────────────────┼────────┤
+│ Ticker chip click → filter scatter                             │ ✅     │
+└────────────────────────────────────────────────────────────────┴────────┘
 
 
 ### Prerequisites

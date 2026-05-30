@@ -1,0 +1,325 @@
+/* src/components/PnLCalendar.css */
+
+.pnl-calendar-root {
+  position: relative;
+  padding: 16px 20px;
+  background: white;
+  border-radius: 8px;
+  margin-top: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ── header ── */
+.pnl-calendar-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pnl-title {
+  font-weight: bold;
+  font-size: 16px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+/* date pickers */
+.pnl-pickers {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pnl-pickers label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+}
+
+.pnl-pickers input[type='date'] {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #333;
+  outline: none;
+  cursor: pointer;
+}
+.pnl-pickers input[type='date']:focus { border-color: #1976d2; }
+
+.cal-reset-btn {
+  padding: 4px 10px;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cal-reset-btn:hover { background: #f5f5f5; }
+
+/* view tabs */
+.pnl-view-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.cal-view-btn {
+  padding: 5px 14px;
+  border: 1.5px solid #1976d2;
+  border-radius: 20px;
+  background: white;
+  color: #1976d2;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cal-view-btn.active { background: #1976d2; color: white; }
+.cal-view-btn:hover:not(.active) { background: #e3f0ff; }
+
+.cal-share-btn {
+  padding: 5px 12px;
+  border: 1.5px solid #000;
+  border-radius: 20px;
+  background: #000;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cal-share-btn:hover { background: #333; }
+
+/* ── empty state ── */
+.pnl-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #aaa;
+}
+.pnl-empty span { font-size: 40px; }
+.pnl-empty p { margin: 8px 0 0; font-size: 15px; }
+
+/* ── stat cards ── */
+.pnl-stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.pnl-stat-card {
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  min-width: 0;
+}
+.pnl-stat-label { font-size: 11px; color: #888; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pnl-stat-value { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pnl-stat-value.green { color: #00a844; }
+.pnl-stat-value.red   { color: #e53935; }
+.pnl-stat-value.neutral { color: #333; }
+
+/* ── bar chart ── */
+.pnl-chart-wrap {
+  margin-bottom: 12px;
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 8px 4px 0;
+}
+
+/* ── bar tooltip ── */
+.pnl-bar-tooltip {
+  background: rgba(20,20,20,0.88);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.pnl-bar-tooltip-sub { font-size: 10px; opacity: 0.7; margin-top: 2px; }
+
+/* ── heatmap ── */
+.pnl-heatmap-section { margin-top: 14px; }
+.pnl-heatmap-label { font-size: 11px; color: #999; margin-bottom: 6px; }
+
+.pnl-heatmap-wrap { overflow-x: auto; }
+.pnl-heatmap-wrap .react-calendar-heatmap text { font-size: 9px; fill: #aaa; }
+.pnl-heatmap-wrap .react-calendar-heatmap rect { rx: 2; }
+.pnl-heatmap-wrap .react-calendar-heatmap .color-empty,
+.pnl-heatmap-wrap .react-calendar-heatmap rect { fill: #e8e8e8; }
+
+/* ── legend ── */
+.pnl-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #999;
+}
+
+/* ── monthly grid ── */
+.pnl-month-grid-section {
+  margin-top: 16px;
+}
+
+.pnl-month-year-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pnl-month-year-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #555;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.pnl-month-cells {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 5px;
+  flex: 1;
+}
+
+.pnl-month-cell {
+  border-radius: 6px;
+  padding: 6px 4px 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: default;
+  transition: transform 0.1s, box-shadow 0.1s;
+  min-width: 0;
+  background: #e8e8e8;
+  color: #aaa;
+}
+
+.pnl-month-cell:not(.empty):hover {
+  transform: scale(1.06);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+  z-index: 2;
+  position: relative;
+}
+
+.pnl-month-name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pnl-month-amount {
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.pnl-month-wr {
+  font-size: 9px;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* ── weekly grid ── */
+.pnl-week-year-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pnl-week-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+
+.pnl-week-cell {
+  border-radius: 5px;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 52px;
+  background: #e8e8e8;
+  color: #aaa;
+  transition: transform 0.1s, box-shadow 0.1s;
+  cursor: default;
+}
+.pnl-week-cell:hover {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+  z-index: 2;
+  position: relative;
+}
+.pnl-week-label  { font-size: 9px;  font-weight: 600; }
+.pnl-week-amount { font-size: 10px; font-weight: bold; white-space: nowrap; }
+
+/* ── yearly grid ── */
+.pnl-year-cells {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.pnl-year-cell {
+  flex: 1;
+  min-width: 140px;
+  max-width: 220px;
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: #e8e8e8;
+  color: #aaa;
+  transition: transform 0.12s, box-shadow 0.12s;
+  cursor: default;
+}
+.pnl-year-cell:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+}
+.pnl-year-label  { font-size: 22px; font-weight: bold; letter-spacing: 0.02em; }
+.pnl-year-amount { font-size: 24px; font-weight: bold; }
+.pnl-year-sub    { font-size: 11px; opacity: 0.85; }
+
+/* ── heatmap tooltip ── */
+.pnl-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: rgba(20,20,20,0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  line-height: 1.7;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}

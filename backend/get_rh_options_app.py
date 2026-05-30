@@ -49,9 +49,10 @@ def save_csv_data(data, filename):
 def format_date(date_str):
   return datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d')
 
-def fetch_option_orders():
+def fetch_option_orders(start_date=None):
   logging.info("Fetching option orders from Robinhood.")
-  option_orders = rh.orders.get_all_option_orders()
+  start_date_str = start_date.strftime('%Y-%m-%d') if start_date is not None else None
+  option_orders = rh.orders.get_all_option_orders(start_date=start_date_str)
   save_data_to_cache(option_orders, CACHE_FILE)
   return option_orders
 
@@ -103,7 +104,7 @@ def update_csv_cache(start_date, end_date, csv_file=CSV_FILE):
 
   option_orders = load_cached_data(CACHE_FILE)
   if option_orders is None:
-      option_orders = fetch_option_orders()
+      option_orders = fetch_option_orders(start_date=start_date)
 
   new_data = process_orders(option_orders)
   new_data['Activity Date'] = pd.to_datetime(new_data['Activity Date'])

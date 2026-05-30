@@ -5,16 +5,19 @@
   "dependencies": {
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
-    "@mui/icons-material": "^6.1.6",
-    "@mui/material": "^5.14.0",
+    "@mui/icons-material": "^5.17.1",
+    "@mui/material": "^5.17.1",
+    "ajv": "^8.20.0",
     "axios": "^1.4.0",
     "html2canvas": "^1.4.1",
     "papaparse": "^5.4.1",
-    "react": "^18.2.0",
+    "react": "^18.3.1",
+    "react-calendar-heatmap": "^1.10.0",
     "react-datepicker": "^4.11.0",
-    "react-dom": "^18.2.0",
+    "react-dom": "^18.3.1",
     "react-markdown": "^8.0.7",
     "react-scripts": "^5.0.1",
+    "react-tooltip": "^6.0.5",
     "recharts": "^2.7.2",
     "typescript": "^4.9.5",
     "web-vitals": "^2.1.4"
@@ -24,10 +27,9 @@
     "npm-force-resolutions": "^0.0.10"
   },
   "scripts": {
-    "preinstall": "npx npm-force-resolutions",
     "start": "concurrently \"npm run start-react\" \"npm run start-backend\"",
     "start-react": "react-scripts start",
-    "start-backend": "cd backend && python -m flask run",
+    "start-backend": "cd backend && /home/mbhat/miniconda3/envs/tradebot/bin/python -m flask run",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

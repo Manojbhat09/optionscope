@@ -112,34 +112,20 @@ ___
 - 💾 **CSV Upload Option**: Alternatively, upload your trading data via CSV if you prefer not to connect your Robinhood account.
 - 💹 **Responsive Design**: Access the dashboard from desktop or mobile devices.
 
-
-┌────────────────────────────────────────────────────────────────┬────────┐
-│                            Feature                             │ Status │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Scatter (855 trades, green/red, size-scaled)                   │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Win + Loss Fingerprint side-by-side                            │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Top 15 wins/losses table (sortable, clickable rows)            │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Stock chart — adaptive granularity (5m for recent, 1d for old) │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ High-Low shaded band + Close line                              │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ VIX overlay + context interpretation                           │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ BUY/SELL reference line markers                                │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ News context (current headlines, bucketed entry/exit/context)  │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Similar trades table (same ticker+type, clickable)             │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Trade Journal (4 prompts, per-trade localStorage)              │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Auto-load on mount when credentials are cached                 │ ✅     │
-├────────────────────────────────────────────────────────────────┼────────┤
-│ Ticker chip click → filter scatter                             │ ✅     │
-└────────────────────────────────────────────────────────────────┴────────┘
+| Feature | Status |
+|---|---|
+| Scatter plot with 855 trades, green/red coloring, and size scaling | ✅ Complete |
+| Win/Loss fingerprint view shown side-by-side | ✅ Complete |
+| Top 15 wins/losses table with sorting and clickable rows | ✅ Complete |
+| Stock chart with adaptive granularity (5m for recent trades, 1d for older trades) | ✅ Complete |
+| High-Low shaded band with Close price line | ✅ Complete |
+| VIX overlay with contextual interpretation | ✅ Complete |
+| BUY/SELL reference line markers | ✅ Complete |
+| News context with entry, exit, and broader trade bucketization | ✅ Complete |
+| Similar trades table for same ticker and trade type | ✅ Complete |
+| Trade Journal with 4 prompts and per-trade localStorage persistence | ✅ Complete |
+| Auto-load on mount when cached credentials are available | ✅ Complete |
+| Clickable ticker chips to filter the scatter plot | ✅ Complete |
 
 
 ### Prerequisites

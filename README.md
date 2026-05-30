@@ -10,7 +10,10 @@
 
 	
   <img src="https://github.com/Manojbhat09/optionscope/blob/main/public/demo.gif" alt="Demo GIF"/>
-
+  <div style="text-align: center;" align="center">
+      <p></p>
+      <img src="public/other.jpg" alt="other" width="900"/>
+    </div>
 
 </div>
 

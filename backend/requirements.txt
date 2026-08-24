@@ -7,4 +7,10 @@ pickle4
 pandas
 dotenv
 requests
-
+anthropic
+openai
+Pillow
+python-dotenv
+ddgs
+statsmodels
+scikit-learn

@@ -1,1 +1,20 @@
 backend/*.pkl
+.env
+backend/.env
+
+# runtime cache state — regenerated on demand, never committed
+backend/orders_cache/
+backend/stock_cache/
+backend/backup/
+backend/__pycache__/
+
+# desktop shell build artifacts
+desktop/node_modules/
+desktop/release/
+desktop/sidecar/
+
+# local runtime data — never commit
+backend/data/
+backend/orders.csv
+node_modules/
+build/

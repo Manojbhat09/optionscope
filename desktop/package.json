@@ -1,0 +1,38 @@
+{
+  "name": "optionscope-desktop",
+  "productName": "OptionScope",
+  "version": "1.1.0",
+  "description": "Options trade analysis dashboard with AI assistant, Trade Replay and Spot Replay",
+  "main": "main.js",
+  "author": "OptionScope",
+  "license": "MIT",
+  "scripts": {
+    "start": "node launch.js",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.optionscope.desktop",
+    "productName": "OptionScope",
+    "directories": { "output": "release" },
+    "files": ["main.js", "package.json"],
+    "extraResources": [
+      { "from": "../build", "to": "build" },
+      { "from": "sidecar", "to": "backend" }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] }]
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Office"
+    }
+  }
+}

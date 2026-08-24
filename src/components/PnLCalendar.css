@@ -3,10 +3,11 @@
 .pnl-calendar-root {
   position: relative;
   padding: 16px 20px;
-  background: white;
+  background: var(--os-surface);
   border-radius: 8px;
   margin-top: 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: var(--os-shadow-1);
+  color: var(--os-text);
 }
 
 /* ── header ── */
@@ -38,31 +39,32 @@
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: #555;
+  color: var(--os-text-2);
   white-space: nowrap;
 }
 
 .pnl-pickers input[type='date'] {
   padding: 4px 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--os-border);
   border-radius: 6px;
   font-size: 12px;
-  color: #333;
+  color: var(--os-text);
+  background: transparent;
   outline: none;
   cursor: pointer;
 }
-.pnl-pickers input[type='date']:focus { border-color: #1976d2; }
+.pnl-pickers input[type='date']:focus { border-color: var(--os-accent); }
 
 .cal-reset-btn {
   padding: 4px 10px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--os-border);
   border-radius: 6px;
-  background: white;
-  color: #555;
+  background: transparent;
+  color: var(--os-text-2);
   font-size: 12px;
   cursor: pointer;
 }
-.cal-reset-btn:hover { background: #f5f5f5; }
+.cal-reset-btn:hover { background: var(--os-border); }
 
 /* view tabs */
 .pnl-view-tabs {
@@ -75,17 +77,17 @@
 
 .cal-view-btn {
   padding: 5px 14px;
-  border: 1.5px solid #1976d2;
+  border: 1.5px solid var(--os-accent);
   border-radius: 20px;
-  background: white;
-  color: #1976d2;
+  background: transparent;
+  color: var(--os-accent);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
-.cal-view-btn.active { background: #1976d2; color: white; }
-.cal-view-btn:hover:not(.active) { background: #e3f0ff; }
+.cal-view-btn.active { background: var(--os-accent); color: var(--os-surface); }
+.cal-view-btn:hover:not(.active) { background: var(--os-border); }
 
 .cal-share-btn {
   padding: 5px 12px;
@@ -104,7 +106,7 @@
 .pnl-empty {
   text-align: center;
   padding: 40px 20px;
-  color: #aaa;
+  color: var(--os-text-3);
 }
 .pnl-empty span { font-size: 40px; }
 .pnl-empty p { margin: 8px 0 0; font-size: 15px; }
@@ -119,21 +121,21 @@
 
 .pnl-stat-card {
   padding: 10px 14px;
-  background: #f8f9fa;
+  background: var(--os-bg);
   border-radius: 8px;
-  border: 1px solid #eee;
+  border: 1px solid var(--os-border);
   min-width: 0;
 }
-.pnl-stat-label { font-size: 11px; color: #888; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pnl-stat-label { font-size: 11px; color: var(--os-text-3); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pnl-stat-value { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pnl-stat-value.green { color: #00a844; }
-.pnl-stat-value.red   { color: #e53935; }
-.pnl-stat-value.neutral { color: #333; }
+.pnl-stat-value.green { color: var(--os-pos); }
+.pnl-stat-value.red   { color: var(--os-neg); }
+.pnl-stat-value.neutral { color: var(--os-text); }
 
 /* ── bar chart ── */
 .pnl-chart-wrap {
   margin-bottom: 12px;
-  background: #fafafa;
+  background: var(--os-bg);
   border-radius: 8px;
   padding: 8px 4px 0;
 }
@@ -154,13 +156,13 @@
 
 /* ── heatmap ── */
 .pnl-heatmap-section { margin-top: 14px; }
-.pnl-heatmap-label { font-size: 11px; color: #999; margin-bottom: 6px; }
+.pnl-heatmap-label { font-size: 11px; color: var(--os-text-3); margin-bottom: 6px; }
 
 .pnl-heatmap-wrap { overflow-x: auto; }
-.pnl-heatmap-wrap .react-calendar-heatmap text { font-size: 9px; fill: #aaa; }
+.pnl-heatmap-wrap .react-calendar-heatmap text { font-size: 9px; fill: var(--os-text-3); }
 .pnl-heatmap-wrap .react-calendar-heatmap rect { rx: 2; }
 .pnl-heatmap-wrap .react-calendar-heatmap .color-empty,
-.pnl-heatmap-wrap .react-calendar-heatmap rect { fill: #e8e8e8; }
+.pnl-heatmap-wrap .react-calendar-heatmap rect { fill: var(--os-border); }
 
 /* ── legend ── */
 .pnl-legend {
@@ -169,7 +171,7 @@
   gap: 4px;
   margin-top: 8px;
   font-size: 11px;
-  color: #999;
+  color: var(--os-text-3);
 }
 
 /* ── monthly grid ── */
@@ -187,7 +189,7 @@
 .pnl-month-year-label {
   font-size: 12px;
   font-weight: bold;
-  color: #555;
+  color: var(--os-text-2);
   width: 36px;
   flex-shrink: 0;
 }
@@ -209,8 +211,8 @@
   cursor: default;
   transition: transform 0.1s, box-shadow 0.1s;
   min-width: 0;
-  background: #e8e8e8;
-  color: #aaa;
+  background: var(--os-border);
+  color: var(--os-text-3);
 }
 
 .pnl-month-cell:not(.empty):hover {
@@ -264,8 +266,8 @@
   align-items: center;
   gap: 1px;
   min-width: 52px;
-  background: #e8e8e8;
-  color: #aaa;
+  background: var(--os-border);
+  color: var(--os-text-3);
   transition: transform 0.1s, box-shadow 0.1s;
   cursor: default;
 }
@@ -296,8 +298,8 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  background: #e8e8e8;
-  color: #aaa;
+  background: var(--os-border);
+  color: var(--os-text-3);
   transition: transform 0.12s, box-shadow 0.12s;
   cursor: default;
 }

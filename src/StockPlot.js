@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceDot } from 'recharts';
 import axios from 'axios';
+import { API_BASE } from './apiBase';
 
 const parseOptionData = (trades) => {
   const profitLoss = {};
@@ -107,7 +108,7 @@ const StockPlot = ({ username, password, ticker, startDate, endDate }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/stock-data', {
+        const response = await axios.post(`${API_BASE}/api/stock-data`, {
           username,
           password,
           ticker,

@@ -1,10 +1,62 @@
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── 2026 design tokens + micro-interactions (files/modern-ux-release-design.md) ─ */
+:root {
+  --os-bg: #f6f8fb;
+  --os-surface: #ffffff;
+  --os-surface-glass: rgba(255, 255, 255, 0.82);
+  --os-border: #e8edf5;
+  --os-text: #101828;
+  --os-text-2: #667085;
+  --os-text-3: #98a2b3;
+  --os-accent: #1976d2;
+  --os-pos: #006300;
+  --os-neg: #d03b3b;
+  --os-radius: 12px;
+  --os-shadow-1: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
+  --os-shadow-2: 0 8px 24px rgba(16, 24, 40, .12);
+}
+
+:root { color-scheme: light; }
+
+/* night palette — one attribute swap retints every var() consumer */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --os-bg: #0d1220;
+  --os-surface: #151b2c;
+  --os-surface-glass: rgba(13, 18, 32, 0.85);
+  --os-border: #263048;
+  --os-text: #e7ecf5;
+  --os-text-2: #9aa5bd;
+  --os-text-3: #67738f;
+  --os-accent: #64b5f6;
+  --os-pos: #3ddc84;
+  --os-neg: #ff7a7a;
+}
+
+body {
+  background: var(--os-bg);
+  color: var(--os-text);
+  transition: background .25s ease, color .25s ease;
+}
+
+/* intentional hover lift — confirms interactivity, never ambient sparkle */
+.os-btn-lift {
+  transition: transform .15s ease, box-shadow .15s ease !important;
+}
+.os-btn-lift:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--os-shadow-2) !important;
+}
+.os-btn-lift:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 code {

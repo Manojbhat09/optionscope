@@ -1,12 +1,17 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   ComposedChart, ScatterChart, Scatter, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
   Legend, ReferenceArea, Customized, Brush,
 } from 'recharts';
-
-const API = 'http://localhost:5000';
+import TradingNotes from './tradingnotes';
+import { useAssistantContext } from './components/chatbot/assistantContext';
+import { TargetIcon, ReplayIcon, CloseIcon, BulbIcon, ChartUpIcon, TrophyIcon, AlertIcon, BookIcon, KeyIcon, NewsIcon, ListIcon, TrendDownIcon, GearIcon } from './components/icons';
+import ErrorBubble from './components/ErrorBubble';
+// Backend base — runtime-resolved so the app works over localhost OR the WSL
+// IP from the Windows browser (see src/apiBase.js).
+import { API_BASE as API } from './apiBase';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +38,16 @@ function toISO(date) {
   if (!date) return null;
   if (typeof date === 'string') return date.slice(0, 10);
   try { return date.toISOString().slice(0, 10); } catch { return null; }
+}
+
+// Robinhood's Activity DateTime is UTC, e.g. "2023-05-12T20:58:59.806380Z".
+// Displayed as-is (UTC) rather than converted to browser-local time, so it
+// stays unambiguous and matches the raw value everything else is keyed off.
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  // Seconds included: day-trades often open and close within the same minute,
+  // and minute precision made Buy/Sell look identical.
+  return iso.slice(0, 19).replace('T', ' ') + ' UTC';
 }
 
 // Parse "TSLA 2023-05-19 call 172.5000" or "TSLA 08/09/2024 Call 197.5000"
@@ -62,7 +77,8 @@ function computePositions(trades) {
       map[key] = {
         key, ticker, expiry, type, strike,
         buyAmount: 0, sellAmount: 0, buyQty: 0, sellQty: 0,
-        openDate: null, closeDate: null, gainRatio: null, pl: 0, expired: false,
+        openDate: null, closeDate: null, openDateTime: null, closeDateTime: null,
+        gainRatio: null, pl: 0, expired: false,
       };
     }
     const p   = map[key];
@@ -74,14 +90,21 @@ function computePositions(trades) {
     // main app strips them, so we match that convention here.
     const absAmt = Math.abs(amt);
     const code = (t['Trans Code'] || '').toUpperCase();
+    const actDT = t['Activity DateTime'] || null;
     if (code === 'BTO') {
       p.buyAmount += absAmt;
       p.buyQty    += qty;
-      if (dt && (!p.openDate || dt < p.openDate)) p.openDate = dt;
+      if (dt && (!p.openDate || dt < p.openDate)) {
+        p.openDate     = dt;
+        p.openDateTime = actDT;
+      }
     } else if (code === 'STC') {
       p.sellAmount += absAmt;
       p.sellQty    += qty;
-      if (dt && (!p.closeDate || dt > p.closeDate)) p.closeDate = dt;
+      if (dt && (!p.closeDate || dt > p.closeDate)) {
+        p.closeDate     = dt;
+        p.closeDateTime = actDT;
+      }
     } else if (code === 'OEXP') {
       p.expired    = true;
     }
@@ -98,12 +121,16 @@ function computePositions(trades) {
 
 // ── custom scatter dot ─────────────────────────────────────────────────────────
 
+// Color cycle for multi-select chart lines & markers (per trade / per ticker).
+const MULTI_PALETTE = ['#1565c0', '#00897b', '#e65100', '#6a1fb1', '#2e7d32', '#c62828', '#00838f', '#5d4037'];
+
 const ScatterDot = (props) => {
-  const { cx, cy, payload, onClick, selected } = props;
+  const { cx, cy, payload, onClick, selected, multiSelected } = props;
   if (!cx || !cy) return null;
   const isSelected = selected && selected.key === payload.key;
+  const isMulti = !!(multiSelected && multiSelected.has && multiSelected.has(payload.key));
   const gr = payload.gainRatio ?? 0;
-  const r = isSelected ? 9 : gr >= 3 ? 6 : 4;
+  const r = isSelected ? 9 : isMulti ? 7 : gr >= 3 ? 6 : 4;
   // Green gradient for wins, red for losses
   const color = gr >= 5  ? '#00c853'
               : gr >= 2  ? '#43a047'
@@ -113,9 +140,10 @@ const ScatterDot = (props) => {
   return (
     <circle cx={cx} cy={cy} r={r}
       fill={color} fillOpacity={0.85}
-      stroke={isSelected ? '#1565c0' : 'rgba(0,0,0,0.15)'} strokeWidth={isSelected ? 2.5 : 0.5}
+      stroke={isSelected ? '#1565c0' : isMulti ? '#ff9800' : 'var(--os-border)'}
+      strokeWidth={isSelected || isMulti ? 2.5 : 0.5}
       style={{ cursor: 'pointer' }}
-      onClick={() => onClick && onClick(payload)}
+      onClick={(ev) => onClick && onClick(payload, ev)}
     />
   );
 };
@@ -129,7 +157,8 @@ const ScatterTip = ({ active, payload }) => {
     <div style={tipStyle}>
       <strong>{d.ticker} {d.type} {d.strike}</strong><br />
       Expiry: {d.expiry}<br />
-      Close: {toISO(d.closeDate)}<br />
+      Buy: {fmtDateTime(d.openDateTime)}<br />
+      Sell: {fmtDateTime(d.closeDateTime)}<br />
       Gain Ratio: <span style={{ color: d.gainRatio >= 1 ? '#00c853' : '#ef5350' }}>
         {d.gainRatio?.toFixed(2)}x
       </span><br />
@@ -137,6 +166,37 @@ const ScatterTip = ({ active, payload }) => {
     </div>
   );
 };
+
+// ── RSI (Wilder smoothing; period adapts to available candles) ────────────────
+// Shared by the single-trade chart and the multi-select per-ticker charts.
+function computeRsiSeries(rows) {
+  const period = rows.length >= 30 ? 14 : rows.length >= 10 ? 7 : 0;
+  if (period === 0 || rows.length < period + 1) return [];
+  const deltas = rows.map((c, i) => {
+    if (i === 0) return null;
+    const prev = rows[i - 1].close; const curr = c.close;
+    return (prev !== null && curr !== null) ? curr - prev : null;
+  });
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    if (deltas[i] === null) continue;
+    if (deltas[i] > 0) avgGain += deltas[i]; else avgLoss += Math.abs(deltas[i]);
+  }
+  avgGain /= period; avgLoss /= period;
+  const rsiArr = new Array(period).fill(null);
+  const rs0 = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs0)).toFixed(2));
+  for (let i = period + 1; i < rows.length; i++) {
+    if (deltas[i] === null) { rsiArr.push(null); continue; }
+    const g = deltas[i] > 0 ? deltas[i] : 0;
+    const l = deltas[i] < 0 ? Math.abs(deltas[i]) : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+    rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs)).toFixed(2));
+  }
+  return rows.map((c, i) => ({ dt: c.dt, rsi: rsiArr[i] ?? null }));
+}
 
 // ── stock chart tooltip ────────────────────────────────────────────────────────
 
@@ -168,6 +228,84 @@ const tipStyle = {
   padding: '8px 12px', borderRadius: 6, fontSize: 12, lineHeight: 1.7,
   pointerEvents: 'none', whiteSpace: 'nowrap',
 };
+
+// ── compute auto-zoom brush for intraday charts ────────────────────────────────
+
+// Robinhood created_at is UTC (e.g. "2023-05-19T13:30:00.000000Z" = 09:30 ET).
+// yfinance returns candles in local exchange time (ET).
+// Find the candle on `dateStr` whose time is closest to `utcIso` after converting UTC→ET.
+function findCandleByTime(chartDts, dateStr, utcIso) {
+  if (!utcIso || !dateStr) return -1;
+  const utcH = parseInt(utcIso.slice(11, 13), 10);
+  const utcM = parseInt(utcIso.slice(14, 16), 10);
+  // Collect indices for that date
+  const dayIdxs = chartDts.reduce((a, d, i) => { if (d?.startsWith(dateStr)) a.push(i); return a; }, []);
+  if (!dayIdxs.length) return -1;
+  let best = -1, bestDiff = Infinity;
+  for (const i of dayIdxs) {
+    const d = chartDts[i];
+    const h = parseInt(d.slice(11, 13), 10) || 0;
+    const m = parseInt(d.slice(14, 16), 10) || 0;
+    const mins = h * 60 + m;
+    // Try both EDT (UTC-4) and EST (UTC-5)
+    for (const off of [4, 5]) {
+      const diff = Math.abs(mins - (((utcH - off + 24) % 24) * 60 + utcM));
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    }
+  }
+  return bestDiff <= 30 ? best : -1; // reject if >30-min gap
+}
+
+// Locates the exact candle for the buy and the sell (time-precise via UTC→ET
+// matching on intraday data, falling back to date-only on daily candles where
+// there's nothing finer to match against), plus an auto-zoom window around
+// them. Reference lines and the zoom brush both derive from this one pass so
+// they can never disagree with each other about which candle a trade happened on.
+function computeTradeChartLayout(ohlcv, buyDate, sellDate, interval, buyIso, sellIso) {
+  if (!ohlcv?.length) return { brush: null, buyDt: null, sellDt: null };
+
+  const chartDts = ohlcv.map(c => c.datetime?.slice(0, 16).replace('T', ' '));
+  const isIntraday = !!interval && interval !== '1d';
+
+  // Buy candle: proximity match by time (UTC→ET) on intraday data, else the
+  // (only) candle for that date.
+  let buyIdx = (isIntraday && buyDate && buyIso) ? findCandleByTime(chartDts, buyDate, buyIso) : -1;
+  if (buyIdx < 0 && buyDate) buyIdx = chartDts.findIndex(d => d?.startsWith(buyDate));
+
+  // Sell candle (search from end)
+  let sellIdx = -1;
+  if (isIntraday && sellDate && sellIso) {
+    sellIdx = findCandleByTime(chartDts, sellDate, sellIso);
+    // findCandleByTime may return the same candle as buy on same-day trades;
+    // scan backwards from it for the true close candle
+    if (sellIdx >= 0 && sellIdx === buyIdx) {
+      for (let i = chartDts.length - 1; i >= 0; i--) {
+        if (chartDts[i]?.startsWith(sellDate)) { sellIdx = i; break; }
+      }
+    }
+  }
+  if (sellIdx < 0 && sellDate) {
+    for (let i = chartDts.length - 1; i >= 0; i--) {
+      if (chartDts[i]?.startsWith(sellDate)) { sellIdx = i; break; }
+    }
+  }
+
+  let brush = null;
+  // Only auto-zoom on intraday data with real timestamps — date-only data
+  // gives a meaningless full-day range.
+  if (isIntraday && (buyIso || sellIso) && (buyIdx >= 0 || sellIdx >= 0)) {
+    const pad = interval === '1m' ? 30 : interval === '5m' ? 15 : interval === '15m' ? 10 : 6;
+    const startIndex = Math.max(0, (buyIdx >= 0 ? buyIdx : sellIdx) - pad);
+    const endIndex   = Math.min(ohlcv.length - 1, (sellIdx >= 0 ? sellIdx : buyIdx) + pad);
+    if (endIndex > startIndex) brush = { startIndex, endIndex };
+  }
+
+  return {
+    brush,
+    buyDt:  buyIdx  >= 0 ? chartDts[buyIdx]  : null,
+    sellDt: sellIdx >= 0 ? chartDts[sellIdx] : null,
+  };
+}
 
 // ── journal storage ────────────────────────────────────────────────────────────
 
@@ -267,8 +405,8 @@ function PatternStats({ pattern, color, chipColor, onTickerClick }) {
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 11, color: '#666', fontStyle: 'italic' }}>
-        💡 Click a ticker to filter scatter to that symbol
+      <div style={{ fontSize: 11, color: '#666', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <BulbIcon size={12} /> Click a ticker to filter scatter to that symbol
       </div>
     </>
   );
@@ -278,7 +416,7 @@ function PatternStats({ pattern, color, chipColor, onTickerClick }) {
 // Main component
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, initialStartDate, initialEndDate }) {
+export default function TradeReplayDemo({ onBack, onGoSpot, initialTrades, initialFilter, initialStartDate, initialEndDate, registry }) {
   const [username, setUsername]     = useState(localStorage.getItem('tr_user') || '');
   const [password, setPassword]     = useState(localStorage.getItem('tr_pass') || '');
   const [startDate, setStartDate]   = useState(
@@ -290,9 +428,30 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
   const [trades, setTrades]         = useState(initialTrades || []);
   const [loadingTrades, setLT]      = useState(false);
   const [tradeError, setTE]         = useState('');
+  const [showCred, setShowCred]     = useState(false);
 
-  const [minGR, setMinGR]           = useState(initialFilter?.minGR ?? 0);
-  const [tickerFilter, setTF]       = useState(initialFilter?.ticker ?? 'All');
+  // ── multi-select (scatter) + multi-trade price charts ─────────────────────
+  // Ctrl/Cmd+click a dot any time, or flip the card's Multi-select button and
+  // plain clicks toggle too. Selection drives the toolbar, the pattern-card
+  // badges and the "Selected Trades · Price Action" charts below the scatter.
+  const [multiMode, setMultiMode]   = useState(false);
+  const [multiSel, setMultiSel]     = useState(() => new Set());
+  const [tsMode, setTsMode]         = useState('single'); // 'single' | 'multi'
+  const [multiHist, setMultiHist]   = useState({});       // { [ticker]: history }
+  const [multiLoading, setMultiLoad] = useState(false);
+  const [multiErr, setMultiErr]     = useState('');
+  const [msBrush, setMsBrush]       = useState(null);     // single-plot zoom
+  const [mtBrushes, setMtBrushes]   = useState({});       // { [ticker]: zoom }
+
+  const [minGR, setMinGR] = useState(initialFilter?.minGR ?? (localStorage.getItem('tr_minGR') !== null ? parseFloat(localStorage.getItem('tr_minGR')) : 0));
+  const [tickerFilter, setTF] = useState(initialFilter?.ticker ?? localStorage.getItem('tr_ticker') ?? 'All');
+
+  // Settings → Preferences → remember filters: persist as they change.
+  useEffect(() => {
+    if (localStorage.getItem('remember_filters') === 'false') return;
+    localStorage.setItem('tr_minGR', String(minGR));
+    localStorage.setItem('tr_ticker', tickerFilter);
+  }, [minGR, tickerFilter]);
 
   const [selected, setSelected]     = useState(null);
   const [history, setHistory]       = useState(null);
@@ -307,6 +466,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
   const [overrideInterval, setOI]   = useState('auto');  // 'auto' | '1m' | '5m' | '15m' | '1h' | '1d'
   const [priceBrush, setPriceBrush] = useState(null);    // { startIndex, endIndex }
   const [rsiBrush,   setRsiBrush]   = useState(null);
+  const [tradeCandles, setTradeCandles] = useState({ buyDt: null, sellDt: null }); // exact buy/sell candle dt, stable across manual brush drags
 
   // Provider API keys — persisted to localStorage so user only enters once
   const [alpacaKey,    setAlpacaKey]    = useState(() => localStorage.getItem('alpaca_key')    || '');
@@ -380,8 +540,57 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     };
   }, []);
 
-  const winPattern  = useMemo(() => buildPattern(positions.filter(p => p.gainRatio >= 2)),  [positions, buildPattern]);
-  const lossPattern = useMemo(() => buildPattern(positions.filter(p => p.gainRatio < 0.5)), [positions, buildPattern]);
+  // ── selection-derived values (Replace + badge semantics) ──────────────────
+  // Must precede the pattern memos — they read activePositions.
+  const selectedPositions = useMemo(
+    () => positions.filter(p => multiSel.has(p.key)),
+    [positions, multiSel]
+  );
+  const activePositions = multiSel.size > 0 ? selectedPositions : positions;
+  const selWins  = selectedPositions.filter(p => p.gainRatio >= 1).length;
+  const selPL    = selectedPositions.reduce((s, p) => s + (p.pl || 0), 0);
+  // Per-trade colors, stable while the selection set doesn't reorder.
+  const tradeColor = useCallback((key) => {
+    const idx = selectedPositions.findIndex(p => p.key === key);
+    return MULTI_PALETTE[(idx < 0 ? 0 : idx) % MULTI_PALETTE.length];
+  }, [selectedPositions]);
+  const tickerGroups = useMemo(() => {
+    const m = new Map();
+    selectedPositions.forEach(p => {
+      if (!m.has(p.ticker)) m.set(p.ticker, []);
+      m.get(p.ticker).push(p);
+    });
+    return [...m.entries()]; // [[ticker, [pos…]], …] in first-selected order
+  }, [selectedPositions]);
+
+  const winPattern  = useMemo(() => buildPattern(activePositions.filter(p => p.gainRatio >= 2)),  [activePositions, buildPattern]);
+  const lossPattern = useMemo(() => buildPattern(activePositions.filter(p => p.gainRatio < 0.5)), [activePositions, buildPattern]);
+
+  // ── assistant context: what the model sees when asked from this page ──────
+  const rootRef = useRef(null);
+  useAssistantContext(registry, {
+    id: 'trade-replay',
+    title: 'Trade Replay',
+    getContext: () => ({
+      filters: { ticker: tickerFilter, minGainRatio: minGR, startDate, endDate },
+      totalPositions: positions.length,
+      wins: scatterWins, losses: scatterLosses,
+      selectedTrade: selected ? {
+        ticker: selected.ticker, type: selected.type, strike: selected.strike,
+        expiry: selected.expiry, key: selected.key,
+        buyAmount: Math.round(selected.buyAmount), sellAmount: Math.round(selected.sellAmount),
+        pl: Math.round(selected.pl), gainRatio: selected.gainRatio != null ? +selected.gainRatio.toFixed(2) : null,
+        expired: !!selected.expired,
+        openDate: selected.openDate?.toISOString?.().slice(0, 10) || null,
+        closeDate: selected.closeDate?.toISOString?.().slice(0, 10) || null,
+        quantity: selected.sellQty || selected.buyQty || null,
+        journalNote: journal[selected.key] || null,
+      } : null,
+      note: 'selectedTrade is the position currently charted; null means none picked yet. '
+          + 'wins/losses counted by gainRatio >=/< 1 (premium recovered vs paid).',
+    }),
+    targetRef: rootRef,
+  });
 
   // ── auto-load on mount if credentials saved ────────────────────────────────
   useEffect(() => {
@@ -407,12 +616,26 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     setLT(false);
   };
 
-  // Keys snapshot for API calls — read from state refs to always get latest value
-  const providerKeys = () => ({
-    ...(alpacaKey    ? { alpaca_key: alpacaKey }       : {}),
-    ...(alpacaSecret ? { alpaca_secret: alpacaSecret } : {}),
-    ...(polygonKey   ? { polygon_key: polygonKey }     : {}),
-  });
+  // ── save credentials from the settings dialog ───────────────────────────────
+  // Persist immediately on write/change, then auto-load if nothing is loaded yet.
+  const saveCreds = () => {
+    localStorage.setItem('tr_user', username);
+    localStorage.setItem('tr_pass', password);
+    setShowCred(false);
+    if (trades.length === 0 && username && password && !loadingTrades) loadTrades();
+  };
+
+  // Keys snapshot for API calls — read from state refs to always get latest value.
+  // Settings → Preferences → "Force yfinance" sends no keys so the backend
+  // skips paid providers entirely.
+  const providerKeys = () => {
+    if (localStorage.getItem('data_provider') === 'force_yfinance') return {};
+    return {
+      ...(alpacaKey    ? { alpaca_key: alpacaKey }       : {}),
+      ...(alpacaSecret ? { alpaca_secret: alpacaSecret } : {}),
+      ...(polygonKey   ? { polygon_key: polygonKey }     : {}),
+    };
+  };
 
   // ── select a trade dot → fetch history + news ─────────────────────────────
   const selectTrade = useCallback(async (pos, interval) => {
@@ -422,8 +645,9 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     setNews(null);
     setJournal(loadJournal(pos));
     setJD(false);
-    setPriceBrush(null);
+    setPriceBrush(null);  // cleared here; will be set to auto-zoom once data arrives
     setRsiBrush(null);
+    setTradeCandles({ buyDt: null, sellDt: null });
 
     const openISO  = toISO(pos.openDate);
     const closeISO = toISO(pos.closeDate);
@@ -437,8 +661,14 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
       }),
       axios.post(`${API}/api/news`, { ticker: pos.ticker, open_date: openISO, close_date: closeISO }),
     ]);
-    if (histRes.status === 'fulfilled') setHistory(histRes.value.data);
-    else setHE(histRes.reason?.response?.data?.error || histRes.reason?.message);
+    if (histRes.status === 'fulfilled') {
+      const data = histRes.value.data;
+      setHistory(data);
+      const layout = computeTradeChartLayout(data?.ohlcv, openISO, closeISO, data?.interval, pos.openDateTime, pos.closeDateTime);
+      setPriceBrush(layout.brush);
+      setTradeCandles({ buyDt: layout.buyDt, sellDt: layout.sellDt });
+      setRsiBrush(null);
+    } else setHE(histRes.reason?.response?.data?.error || histRes.reason?.message);
     if (newsRes.status === 'fulfilled') setNews(newsRes.value.data);
     setLH(false);
   }, []);
@@ -450,14 +680,142 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     const closeISO = toISO(selected.closeDate);
     if (!openISO || !closeISO) return;
     setLH(true); setHE(''); setPriceBrush(null); setRsiBrush(null);
+    setTradeCandles({ buyDt: null, sellDt: null });
     axios.post(`${API}/api/stock-history`, {
       ticker: selected.ticker, start_date: openISO, end_date: closeISO,
       interval: overrideInterval, ...providerKeys(),
-    }).then(r => setHistory(r.data))
-      .catch(e => setHE(e?.response?.data?.error || e.message))
+    }).then(r => {
+      setHistory(r.data);
+      const layout = computeTradeChartLayout(r.data?.ohlcv, openISO, closeISO, r.data?.interval, selected.openDateTime, selected.closeDateTime);
+      setPriceBrush(layout.brush);
+      setTradeCandles({ buyDt: layout.buyDt, sellDt: layout.sellDt });
+      setRsiBrush(null);
+    }).catch(e => setHE(e?.response?.data?.error || e.message))
       .finally(() => setLH(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overrideInterval]);
+
+  // ── multi-select: dot click routing ──────────────────────────────────────────
+  // Multi-select button ON → plain clicks toggle dots. Button OFF → plain
+  // click replays (today's behavior) and Ctrl/Cmd+click toggles selection.
+  const handleScatterClick = useCallback((pos, ev) => {
+    if (multiMode || ev?.ctrlKey || ev?.metaKey) {
+      setMultiSel(prev => {
+        const n = new Set(prev);
+        if (n.has(pos.key)) n.delete(pos.key); else n.add(pos.key);
+        return n;
+      });
+      return;
+    }
+    selectTrade(pos);
+  }, [multiMode, selectTrade]);
+
+  // Selection self-prunes when trades are reloaded and keys disappear.
+  useEffect(() => {
+    setMultiSel(prev => {
+      if (prev.size === 0) return prev;
+      const keys = new Set(positions.map(p => p.key));
+      const next = new Set([...prev].filter(k => keys.has(k)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [positions]);
+
+  // ── batch history fetch for the multi-select price charts ─────────────────
+  // One request per unique ticker covering the whole selection window; results
+  // cached in state until the selection or interval changes. Same-day (day-
+  // trade) selections auto-escalate granularity so the buy/sell markers can
+  // land on separate candles — daily bars would stack them on one datetime.
+  useEffect(() => {
+    if (multiSel.size === 0) { setMultiHist({}); setMultiErr(''); return; }
+    let cancelled = false;
+    (async () => {
+      setMultiLoad(true); setMultiErr('');
+      const tickers = [...new Set(selectedPositions.map(p => p.ticker))];
+      const opens  = selectedPositions.map(p => toISO(p.openDate)).filter(Boolean).sort();
+      const closes = selectedPositions.map(p => toISO(p.closeDate)).filter(Boolean).sort();
+      if (!opens.length || !closes.length) {
+        setMultiErr('Selection has trades with missing dates'); setMultiLoad(false); return;
+      }
+      const anySameDay = selectedPositions.some(p => toISO(p.openDate) === toISO(p.closeDate));
+      const spanDays = (new Date(closes[closes.length - 1]) - new Date(opens[0])) / 86400000;
+      const effInterval = overrideInterval !== 'auto' ? overrideInterval
+        : anySameDay ? (spanDays <= 3 ? '1m' : spanDays <= 14 ? '5m' : '15m')
+        : 'auto';
+      const results = {};
+      await Promise.allSettled(tickers.map(tk =>
+        axios.post(`${API}/api/stock-history`, {
+          ticker: tk, start_date: opens[0], end_date: closes[closes.length - 1],
+          interval: effInterval, ...providerKeys(),
+        }).then(r => { results[tk] = r.data; })
+          .catch(e => { results[tk] = { error: e?.response?.data?.error || e.message }; })
+      ));
+      if (cancelled) return;
+      setMultiHist(results);
+      setMsBrush(null); setMtBrushes({});   // fresh window → reset zooms
+      const failed = tickers.filter(tk => results[tk]?.error);
+      setMultiErr(failed.length ? `${failed.length}/${tickers.length} ticker(s) failed: ${failed.join(', ')}` : '');
+      setMultiLoad(false);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [multiSel, overrideInterval]);
+
+  // Candle dt for a trade marker: snap to the candle NEAREST the trade's real
+  // timestamp (Activity DateTime) so intraday buys/sells separate; falls back
+  // to the first candle of the trade's date when no timestamp exists.
+  const markerDt = (rows, date, exactIso) => {
+    if (exactIso) {
+      const t = new Date(exactIso).getTime();
+      if (Number.isFinite(t)) {
+        let best = null, bestDiff = Infinity;
+        for (const r of rows) {
+          const rt = new Date((r.dt || '').replace(' ', 'T') + 'Z').getTime();
+          if (!Number.isFinite(rt)) continue;
+          const diff = Math.abs(rt - t);
+          if (diff < bestDiff) { bestDiff = diff; best = r.dt; }
+        }
+        if (best) return best;
+      }
+    }
+    const iso = toISO(date);
+    return iso ? (rows.find(r => r.dt?.startsWith(iso))?.dt || null) : null;
+  };
+
+  // Merged rows for Single-plot: { dt, [ticker]: close, vix }. With more than
+  // one ticker every series is normalized to % change from window start so
+  // different price scales share one axis. VIX is merged once — market-wide.
+  const singleRows = useMemo(() => {
+    if (tickerGroups.length === 0) return [];
+    const tickers = tickerGroups.map(([tk]) => tk);
+    const rows = new Map();
+    tickers.forEach(tk => {
+      (multiHist[tk]?.ohlcv || []).forEach(c => {
+        const dt = c.datetime?.slice(0, 16).replace('T', ' ');
+        if (!dt) return;
+        if (!rows.has(dt)) rows.set(dt, { dt });
+        rows.get(dt)[tk] = c.Close != null ? +c.Close.toFixed(2) : null;
+      });
+    });
+    const vixSrc = tickers.map(tk => multiHist[tk]).find(h => h?.vix?.length);
+    (vixSrc?.vix || []).forEach(v => {
+      const dt = v.datetime?.slice(0, 16).replace('T', ' ');
+      if (dt && rows.has(dt)) rows.get(dt).vix = v.vix ?? null;
+    });
+    const out = [...rows.values()].sort((a, b) => (a.dt < b.dt ? -1 : 1));
+    if (tickers.length > 1) {
+      const base = {};
+      tickers.forEach(tk => {
+        const first = out.find(r => r[tk] != null);
+        base[tk] = first ? first[tk] : null;
+      });
+      out.forEach(r => {
+        tickers.forEach(tk => {
+          r[tk] = (r[tk] != null && base[tk]) ? +(((r[tk] - base[tk]) / base[tk]) * 100).toFixed(2) : null;
+        });
+      });
+    }
+    return out;
+  }, [tickerGroups, multiHist]);
 
   // ── save journal ───────────────────────────────────────────────────────────
   const saveJ = () => {
@@ -491,21 +849,10 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     vix: vixByDate[c.dt?.slice(0, 10)] || null,
   })), [chartData, vixByDate]);
 
-  // Reference line X values (match dt format)
-  const buyDt = useMemo(() => {
-    if (!selected?.openDate || !chartData.length) return null;
-    const buyDate = toISO(selected.openDate);
-    const match = chartData.find(c => c.dt?.startsWith(buyDate));
-    return match?.dt || null;
-  }, [selected, chartData]);
-
-  const sellDt = useMemo(() => {
-    if (!selected?.closeDate || !chartData.length) return null;
-    const sellDate = toISO(selected.closeDate);
-    const match = chartData.findLast?.(c => c.dt?.startsWith(sellDate))
-      || [...chartData].reverse().find(c => c.dt?.startsWith(sellDate));
-    return match?.dt || null;
-  }, [selected, chartData]);
+  // Reference line X values — the exact buy/sell candle, time-matched (not
+  // just date-matched) via computeTradeChartLayout when history loads, so the
+  // BUY/SELL lines and the auto-zoom brush always agree on the same candle.
+  const { buyDt, sellDt } = tradeCandles;
 
   const priceRange = useMemo(() => {
     if (!chartData.length) return [0, 0];
@@ -515,37 +862,8 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
     return [+(mn - pad).toFixed(2), +(mx + pad).toFixed(2)];
   }, [chartData]);
 
-  // RSI — Wilder smoothing; period adapts to available candles
-  const rsiData = useMemo(() => {
-    const period = chartData.length >= 30 ? 14 : chartData.length >= 10 ? 7 : 0;
-    if (period === 0 || chartData.length < period + 1) return [];
-    // build delta array (same length as chartData, first element null)
-    const deltas = chartData.map((c, i) => {
-      if (i === 0) return null;
-      const prev = chartData[i - 1].close; const curr = c.close;
-      return (prev !== null && curr !== null) ? curr - prev : null;
-    });
-    // seed first average from first `period` deltas (indices 1..period)
-    let avgGain = 0, avgLoss = 0;
-    for (let i = 1; i <= period; i++) {
-      if (deltas[i] === null) continue;
-      if (deltas[i] > 0) avgGain += deltas[i]; else avgLoss += Math.abs(deltas[i]);
-    }
-    avgGain /= period; avgLoss /= period;
-    const rsiArr = new Array(period).fill(null);
-    const rs0 = avgLoss === 0 ? Infinity : avgGain / avgLoss;
-    rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs0)).toFixed(2));
-    for (let i = period + 1; i < chartData.length; i++) {
-      if (deltas[i] === null) { rsiArr.push(null); continue; }
-      const g = deltas[i] > 0 ? deltas[i] : 0;
-      const l = deltas[i] < 0 ? Math.abs(deltas[i]) : 0;
-      avgGain = (avgGain * (period - 1) + g) / period;
-      avgLoss = (avgLoss * (period - 1) + l) / period;
-      const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
-      rsiArr.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + rs)).toFixed(2));
-    }
-    return chartData.map((c, i) => ({ dt: c.dt, rsi: rsiArr[i] ?? null }));
-  }, [chartData]);
+  // RSI — see computeRsiSeries (module scope), shared with the multi charts
+  const rsiData = useMemo(() => computeRsiSeries(chartData), [chartData]);
 
   const holdPnl = selected ? fmt(selected.pl) : '';
   const holdDays = selected?.openDate && selected?.closeDate
@@ -554,7 +872,8 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={styles.root}>
+    <div style={styles.root} ref={rootRef}>
+      <ErrorBubble message={histError || tradeError} />
 
       {/* ── header ── */}
       <div style={styles.header}>
@@ -562,22 +881,34 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
           {onBack && (
             <button style={styles.backBtn} onClick={onBack}>← Dashboard</button>
           )}
-          <span style={styles.title}>🔄 Trade Replay</span>
+          {onGoSpot && (
+            <button style={{ ...styles.backBtn, background: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.75)',
+                             display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontWeight: 600 }} onClick={onGoSpot}
+                    title="Open the dynamic options edge analyzer">
+              <TargetIcon size={14} /> Spot Replay
+            </button>
+          )}
+          <span style={{ ...styles.title, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <ReplayIcon size={16} /> Trade Replay
+          </span>
           <span style={styles.subtitle}>Click any dot on the scatter plot to replay that trade</span>
         </div>
       </div>
 
-      {/* ── credentials row ── */}
+      {/* ── controls row (credentials live behind the gear button) ── */}
       <div style={styles.credRow}>
-        <input style={styles.inp} placeholder="Robinhood email"
-          value={username} onChange={e => setUsername(e.target.value)} />
-        <input style={styles.inp} type="password" placeholder="Password"
-          value={password} onChange={e => setPassword(e.target.value)} />
         <input style={{ ...styles.inp, width: 130 }} type="date"
           value={startDate} onChange={e => setStartDate(e.target.value)} />
         <input style={{ ...styles.inp, width: 130 }} type="date"
           value={endDate} onChange={e => setEndDate(e.target.value)} />
-        <button style={styles.btn} onClick={loadTrades} disabled={loadingTrades}>
+        <button style={styles.gearBtn} onClick={() => setShowCred(true)}
+                title="Robinhood credentials" aria-label="Robinhood credentials settings">
+          <GearIcon size={14} />
+          {username && password
+            ? <span style={{ fontSize: 11 }}>Credentials saved</span>
+            : <span style={{ fontSize: 11 }}>Add credentials</span>}
+        </button>
+        <button style={styles.btn} onClick={() => loadTrades()} disabled={loadingTrades}>
           {loadingTrades ? 'Loading…' : trades.length ? `Reload (${trades.length} rows)` : 'Load Trades'}
         </button>
         {tradeError && <span style={styles.err}>{tradeError}</span>}
@@ -585,6 +916,39 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
           <span style={styles.ok}>✓ {positions.length} closed positions</span>
         )}
       </div>
+
+      {/* ── credentials dialog ── */}
+      {showCred && (
+        <>
+          <div onClick={() => setShowCred(false)} aria-label="Close credentials dialog"
+               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 998 }} />
+          <div role="dialog" aria-label="Robinhood credentials"
+               style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 999,
+                        width: 300, padding: 16, boxSizing: 'border-box',
+                        background: 'var(--os-surface)', color: 'var(--os-text)',
+                        border: '1px solid var(--os-border)', borderRadius: 8,
+                        boxShadow: 'var(--os-shadow-2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                <KeyIcon size={13} /> Robinhood Credentials
+              </strong>
+              <button onClick={() => setShowCred(false)} aria-label="Close"
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', padding: 2 }}>
+                <CloseIcon size={15} />
+              </button>
+            </div>
+            <input style={{ ...styles.inp, width: '100%', boxSizing: 'border-box' }} placeholder="Robinhood email"
+              value={username} onChange={e => setUsername(e.target.value)} />
+            <input style={{ ...styles.inp, width: '100%', boxSizing: 'border-box' }} type="password" placeholder="Password"
+              value={password} onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && saveCreds()} />
+            <div style={{ fontSize: 10.5, color: 'var(--os-text-3)' }}>
+              Saved locally in this browser the moment you save, and reused automatically on every visit.
+            </div>
+            <button style={styles.btn} onClick={saveCreds}>Save</button>
+          </div>
+        </>
+      )}
 
       {/* ── filter row ── */}
       {positions.length > 0 && (
@@ -598,10 +962,20 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
             <input style={{ ...styles.inp, width: 70 }} type="number" step="0.5" min="0"
               value={minGR} onChange={e => setMinGR(+e.target.value)} />
           </label>
-          <span style={styles.ok}>{scatterData.length} trades</span>
-          <span style={{ fontSize: 12, color: '#00a844' }}>▲ {scatterWins} wins</span>
-          <span style={{ fontSize: 12, color: '#e53935' }}>▼ {scatterLosses} losses</span>
-          <span style={{ fontSize: 11, color: '#aaa', marginLeft: 4 }}>
+          {multiSel.size > 0 ? (
+            <>
+              <span style={{ ...styles.ok, fontWeight: 700, color: '#ff9800' }}>{multiSel.size} SELECTED</span>
+              <span style={{ fontSize: 12, color: '#00a844' }}>▲ {selWins} wins</span>
+              <span style={{ fontSize: 12, color: '#e53935' }}>▼ {multiSel.size - selWins} losses</span>
+            </>
+          ) : (
+            <>
+              <span style={styles.ok}>{scatterData.length} trades</span>
+              <span style={{ fontSize: 12, color: '#00a844' }}>▲ {scatterWins} wins</span>
+              <span style={{ fontSize: 12, color: '#e53935' }}>▼ {scatterLosses} losses</span>
+            </>
+          )}
+          <span style={{ fontSize: 11, color: 'var(--os-text-3)', marginLeft: 4 }}>
             (green=win · red=loss · bigger=higher gain)
           </span>
         </div>
@@ -610,57 +984,436 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
       {/* ── scatter plot ── */}
       {scatterData.length > 0 && (
         <div style={styles.card}>
-          <div style={styles.cardTitle}>Gain Ratio (Sell/Buy) by Close Date — click a dot to replay</div>
+          <div style={{ ...styles.cardTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <span>
+              Gain Ratio (Sell/Buy) by Close Date — click a dot to replay
+              {multiMode && <span style={{ color: '#ff9800' }}> · multi-select ON</span>}
+            </span>
+            <button onClick={() => setMultiMode(m => !m)}
+                    title="Multi-select: plain clicks toggle dots into a set. Ctrl/Cmd+click works even with this off."
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
+                             fontSize: 11, fontWeight: 600, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                             background: multiMode ? '#ff9800' : 'var(--os-surface)',
+                             color: multiMode ? '#fff' : 'var(--os-text-2)',
+                             border: `1px solid ${multiMode ? '#ff9800' : 'var(--os-border)'}` }}>
+              <ListIcon size={12} /> Multi-select
+            </button>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
             <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--os-border)" />
               <XAxis dataKey="closeTs" type="number" domain={['auto','auto']}
                 tickFormatter={v => new Date(v).toLocaleDateString('en-US', { month:'short', year:'2-digit' })}
-                tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />
+                tick={{ fontSize: 10, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false} />
               <YAxis dataKey="gainRatio" type="number" domain={[0,'auto']}
                 tickFormatter={v => v.toFixed(1) + 'x'}
-                tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} width={40} />
+                tick={{ fontSize: 10, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false} width={40} />
               <Tooltip content={<ScatterTip />} />
               <Scatter data={scatterData} shape={
-                (props) => <ScatterDot {...props} onClick={selectTrade} selected={selected} />
+                (props) => <ScatterDot {...props} onClick={handleScatterClick} selected={selected} multiSelected={multiSel} />
               } />
             </ScatterChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {trades.length === 0 && (
-        <div style={styles.empty}>
-          <div style={{ fontSize: 48 }}>📈</div>
-          <div>Enter your Robinhood credentials and click <strong>Load Trades</strong> to begin.</div>
+      {/* ── multi-select toolbar (stats + global chart controls) ── */}
+      {multiSel.size > 0 && (
+        <div style={{ margin: '10px 24px 0', background: 'var(--os-surface)', border: '1px solid #ff9800', borderRadius: 8, padding: '8px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: '#ff9800', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ListIcon size={13} /> {multiSel.size} selected
+            </span>
+            <span style={{ fontSize: 12, color: '#00a844' }}>▲ {selWins}W</span>
+            <span style={{ fontSize: 12, color: '#e53935' }}>▼ {multiSel.size - selWins}L</span>
+            <span style={{ fontSize: 12, color: 'var(--os-text)' }}>P&amp;L {selPL >= 0 ? '+' : ''}{fmt(selPL)}</span>
+            <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>
+              pattern cards &amp; counts reflect the selection · Ctrl+click adds more
+            </span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => { setMultiSel(new Set()); setMsBrush(null); setMtBrushes({}); }}
+                    style={{ border: '1px solid var(--os-border)', background: 'var(--os-bg)', color: 'var(--os-text-2)',
+                             padding: '3px 12px', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
+              Clear ✕
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 7, paddingTop: 7, borderTop: '1px solid var(--os-border)' }}>
+            <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>Layout:</span>
+            {[['single', 'Single-plot'], ['multi', 'Multi-ticker']].map(([m, label]) => (
+              <button key={m} onClick={() => setTsMode(m)}
+                      style={{ padding: '3px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', borderRadius: 4,
+                               background: tsMode === m ? '#1565c0' : 'var(--os-surface)',
+                               color: tsMode === m ? '#fff' : 'var(--os-text-2)',
+                               border: `1px solid ${tsMode === m ? '#1565c0' : 'var(--os-border)'}` }}>
+                {label}
+              </button>
+            ))}
+            {tsMode === 'multi' && (
+              <>
+                <div style={{ width: 1, height: 16, background: 'var(--os-border)', margin: '0 6px' }} />
+                <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>Chart:</span>
+                {[['line', 'Line'], ['area', 'Area'], ['candle', 'Candle']].map(([ct, label]) => (
+                  <button key={ct} onClick={() => setChartType(ct)}
+                          style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                                   background: chartType === ct ? '#1565c0' : 'var(--os-surface)',
+                                   color: chartType === ct ? '#fff' : 'var(--os-text-2)',
+                                   border: `1px solid ${chartType === ct ? '#1565c0' : 'var(--os-border)'}` }}>
+                    {label}
+                  </button>
+                ))}
+              </>
+            )}
+            <div style={{ width: 1, height: 16, background: 'var(--os-border)', margin: '0 6px' }} />
+            <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>Interval:</span>
+            {['auto', '1m', '5m', '15m', '1h', '1d'].map(iv => (
+              <button key={iv} onClick={() => setOI(iv)}
+                      style={{ padding: '3px 9px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
+                               background: overrideInterval === iv ? '#ff9800' : 'var(--os-border)',
+                               color: overrideInterval === iv ? '#fff' : 'var(--os-text-2)',
+                               border: `1px solid ${overrideInterval === iv ? '#ff9800' : 'var(--os-border)'}`,
+                               fontWeight: overrideInterval === iv ? 600 : 400 }}>
+                {iv}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── win / loss fingerprint comparison ── */}
-      {(winPattern || lossPattern) && (
+      {/* ── selected trades · single-plot overlay ── */}
+      {multiSel.size > 0 && tsMode === 'single' && (() => {
+        const tickers = tickerGroups.map(([tk]) => tk);
+        const normed = tickers.length > 1;
+        const showLabels = selectedPositions.length <= 6;
+        // Technical indicators on Single-plot only when ONE ticker is selected
+        // — otherwise which ticker the RSI describes would be ambiguous.
+        let singleRsiRows = [];
+        if (tickers.length === 1) {
+          const r = (multiHist[tickers[0]]?.ohlcv || []).map(c => ({
+            dt: c.datetime?.slice(0, 16).replace('T', ' '),
+            close: c.Close != null ? +c.Close.toFixed(2) : null,
+          })).filter(x => x.dt);
+          singleRsiRows = computeRsiSeries(r);
+        }
+        return (
+          <div style={{ ...styles.card, marginTop: 12 }}>
+            <div style={{ ...styles.cardTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <ListIcon size={13} /> Selected Trades · Single-plot
+                {multiLoading && <span style={{ color: 'var(--os-text-3)', fontWeight: 400 }}>· loading history…</span>}
+                {multiErr && <span style={styles.err}>{multiErr}</span>}
+              </span>
+              {msBrush && singleRows.length > 0 && (
+                <button onClick={() => setMsBrush(null)} style={styles.resetZoom}>⟲ Reset zoom</button>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--os-text-3)', marginBottom: 4 }}>
+              {normed
+                ? '% change from window start · one line per ticker'
+                : 'raw close · buy/sell markers per selected trade'}
+              {' · VIX (market-wide index) · drag the bottom brush to zoom'}
+            </div>
+            {singleRows.length > 0 && (
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart data={singleRows} margin={{ top: 14, right: 56, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--os-border)" vertical={false} />
+                  <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
+                    tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} interval="preserveStartEnd"
+                    axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="price"
+                    tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false} width={52}
+                    tickFormatter={v => normed ? `${v}%` : `$${v.toFixed(2)}`} />
+                  <YAxis yAxisId="vix" orientation="right"
+                    tick={{ fontSize: 9, fill: 'var(--os-text-3)' }} axisLine={false} tickLine={false} width={34}
+                    tickFormatter={v => v.toFixed(0)} />
+                  <Tooltip content={<StockTip />} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {tickers.map((tk, i) => (
+                    <Line key={tk} yAxisId="price" type="monotone" dataKey={tk} name={tk}
+                      stroke={normed ? MULTI_PALETTE[i % MULTI_PALETTE.length] : '#1565c0'}
+                      dot={false} strokeWidth={2} connectNulls />
+                  ))}
+                  {selectedPositions.map(p => {
+                    const c = tradeColor(p.key);
+                    const b = markerDt(singleRows, p.openDate, p.openDateTime);
+                    const s = markerDt(singleRows, p.closeDate, p.closeDateTime);
+                    return (
+                      <React.Fragment key={p.key}>
+                        {b && <ReferenceLine yAxisId="price" x={b} stroke={c} strokeWidth={1.5} strokeDasharray="4 3"
+                          label={showLabels ? { value: '▲', position: 'insideTopRight', fill: c, fontSize: 9 } : undefined} />}
+                        {s && <ReferenceLine yAxisId="price" x={s} stroke={c} strokeWidth={1.5} strokeDasharray="4 3"
+                          label={showLabels ? { value: '▼', position: 'insideTopRight', fill: c, fontSize: 9 } : undefined} />}
+                      </React.Fragment>
+                    );
+                  })}
+                  <Line yAxisId="vix" type="monotone" dataKey="vix" name="VIX"
+                    stroke="#ff9800" dot={false} strokeWidth={1.5} strokeDasharray="4 2" connectNulls />
+                  <Brush dataKey="dt" height={24} travellerWidth={8}
+                    stroke="#90caf9" fill="#f0f4ff"
+                    startIndex={msBrush?.startIndex ?? 0}
+                    endIndex={msBrush?.endIndex ?? Math.max(0, singleRows.length - 1)}
+                    onChange={({ startIndex, endIndex }) => setMsBrush({ startIndex, endIndex })}
+                    tickFormatter={() => ''} />
+                 </ComposedChart>
+              </ResponsiveContainer>
+            )}
+
+            {singleRsiRows.length > 0 && singleRsiRows.some(d => d.rsi !== null) && (
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#7b1fa2', marginBottom: 2, paddingLeft: 2 }}>
+                  RSI ({singleRows.length >= 30 ? 14 : 7}) · {tickers[0]} — overbought &gt;70 · oversold &lt;30
+                </div>
+                <ResponsiveContainer width="100%" height={90}>
+                  <ComposedChart data={singleRsiRows} margin={{ top: 4, right: 56, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
+                      tick={{ fontSize: 8, fill: 'var(--os-text-3)' }} interval="preserveStartEnd"
+                      axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} ticks={[30, 50, 70]}
+                      tick={{ fontSize: 8, fill: 'var(--os-text-3)' }} axisLine={false} tickLine={false} width={34} />
+                    <Tooltip formatter={(v) => [v !== null ? v.toFixed(1) : '—', 'RSI']}
+                      contentStyle={{ fontSize: 11, borderRadius: 6, padding: '4px 10px' }} />
+                    <ReferenceArea y1={70} y2={100} fill="rgba(229,57,53,0.08)" stroke="none" />
+                    <ReferenceArea y1={0} y2={30} fill="rgba(0,200,83,0.08)" stroke="none" />
+                    <ReferenceLine y={70} stroke="#e53935" strokeDasharray="4 2" strokeWidth={1} />
+                    <ReferenceLine y={30} stroke="#00c853" strokeDasharray="4 2" strokeWidth={1} />
+                    <Line type="monotone" dataKey="rsi" name="RSI" stroke="#7b1fa2" dot={false} strokeWidth={1.5} connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── selected trades · one separate card per ticker (Multi-ticker) ── */}
+      {multiSel.size > 0 && tsMode === 'multi' && (() => {
+        const MAX_TICKERS = 12;
+        const groups = tickerGroups.slice(0, MAX_TICKERS);
+        return (
+          <>
+            {(multiErr || multiLoading) && (
+              <div style={{ margin: '10px 24px 0', fontSize: 12 }}>
+                {multiLoading && <span style={{ color: 'var(--os-text-3)' }}>loading history…</span>}
+                {multiErr && <span style={styles.err}>{multiErr}</span>}
+              </div>
+            )}
+            {tickerGroups.length > MAX_TICKERS && (
+              <div style={{ margin: '10px 24px 0', fontSize: 11, color: 'var(--os-text-3)' }}>
+                +{tickerGroups.length - MAX_TICKERS} more tickers not charted (cap {MAX_TICKERS})
+              </div>
+            )}
+            {groups.map(([tk, tradesIn]) => {
+              const hist = multiHist[tk];
+              const rows = (hist?.ohlcv || []).map(c => ({
+                dt: c.datetime?.slice(0, 16).replace('T', ' '),
+                close: c.Close != null ? +c.Close.toFixed(2) : null,
+                high: c.High != null ? +c.High.toFixed(2) : undefined,
+                low: c.Low != null ? +c.Low.toFixed(2) : undefined,
+                open: c.Open != null ? +c.Open.toFixed(2) : undefined,
+              })).filter(r => r.dt);
+              // VIX merged into EVERY card — each ticker chart is self-contained.
+              if (hist?.vix?.length) {
+                const vmap = new Map(hist.vix.map(v => [v.datetime?.slice(0, 16).replace('T', ' '), v.vix]));
+                rows.forEach(r => { if (vmap.has(r.dt)) r.vix = vmap.get(r.dt); });
+              }
+              const netPL = tradesIn.reduce((s, p) => s + (p.pl || 0), 0);
+              const hasVix = rows.some(r => r.vix != null);
+              const rsiRows = computeRsiSeries(rows);
+              const br = mtBrushes[tk];
+              const tkColor = MULTI_PALETTE[Math.max(0, tickerGroups.findIndex(g => g[0] === tk)) % MULTI_PALETTE.length];
+              return (
+                <div key={tk} style={{ ...styles.card, marginTop: 12 }}>
+                  <div style={{ ...styles.cardTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: tkColor }}>{tk}</span>
+                      <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--os-text-3)' }}>
+                        {tradesIn.length} trade{tradesIn.length > 1 ? 's' : ''} · net P&amp;L
+                      </span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: netPL >= 0 ? '#00a844' : '#e53935' }}>
+                        {netPL >= 0 ? '+' : ''}{fmt(netPL)}
+                      </span>
+                      {hist?.interval && <span style={{ fontSize: 10, color: 'var(--os-text-3)' }}>· {hist.interval}</span>}
+                      {hist?.error && <span style={styles.err}>{hist.error}</span>}
+                      {multiLoading && !hist && <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>· loading…</span>}
+                    </span>
+                    {br && rows.length > 0 && (
+                      <button onClick={() => setMtBrushes(prev => ({ ...prev, [tk]: null }))}
+                              style={styles.resetZoom}>⟲ Reset zoom</button>
+                    )}
+                  </div>
+
+                  {/* per-trade detail strip — same fields as the single-trade view */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 8 }}>
+                    <thead>
+                      <tr style={{ color: 'var(--os-text-3)', textAlign: 'left' }}>
+                        <th style={{ padding: '3px 8px 3px 0' }}>Trade</th>
+                        <th style={{ padding: '3px 8px' }}>Gain Ratio</th>
+                        <th style={{ padding: '3px 8px' }}>P&amp;L</th>
+                        <th style={{ padding: '3px 8px' }}>Buy $/c</th>
+                        <th style={{ padding: '3px 8px' }}>Sell $/c</th>
+                        <th style={{ padding: '3px 8px' }}>Buy Time</th>
+                        <th style={{ padding: '3px 8px' }}>Sell Time</th>
+                        <th style={{ padding: '3px 8px' }}>Held</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tradesIn.map(p => {
+                        const held = p.openDate && p.closeDate
+                          ? Math.round((new Date(p.closeDate) - new Date(p.openDate)) / 86400000) : null;
+                        return (
+                          <tr key={p.key} style={{ borderTop: '1px solid var(--os-border)', color: 'var(--os-text)' }}>
+                            <td style={{ padding: '4px 8px 4px 0', fontWeight: 600 }}>{p.type} @ ${p.strike} · {p.expiry}</td>
+                            <td style={{ padding: '4px 8px', color: p.gainRatio >= 1 ? '#00a844' : '#e53935' }}>{p.gainRatio?.toFixed(2)}x</td>
+                            <td style={{ padding: '4px 8px', color: p.pl >= 0 ? '#00a844' : '#e53935' }}>{fmt(p.pl)}</td>
+                            <td style={{ padding: '4px 8px' }}>{fmt(p.buyAmount / (p.buyQty || 1))}</td>
+                            <td style={{ padding: '4px 8px' }}>{fmt(p.sellAmount / (p.sellQty || 1))}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--os-text-2)' }}>{fmtDateTime(p.openDateTime)}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--os-text-2)' }}>{fmtDateTime(p.closeDateTime)}</td>
+                            <td style={{ padding: '4px 8px' }}>{held != null ? `${held}d` : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {rows.length > 0 && (
+                    <>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <ComposedChart data={rows} margin={{ top: 8, right: hasVix ? 56 : 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--os-border)" vertical={false} />
+                          <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
+                            tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} interval="preserveStartEnd"
+                            axisLine={false} tickLine={false} />
+                          <YAxis yAxisId="price" domain={['auto', 'auto']}
+                            tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false} width={52}
+                            tickFormatter={v => `$${v.toFixed(2)}`} />
+                          {hasVix && (
+                            <YAxis yAxisId="vix" orientation="right"
+                              tick={{ fontSize: 9, fill: 'var(--os-text-3)' }} axisLine={false} tickLine={false} width={34}
+                              tickFormatter={v => v.toFixed(0)} />
+                          )}
+                          <Tooltip content={<StockTip />} />
+                          {chartType === 'area' && (
+                            <Area yAxisId="price" type="monotone" dataKey="close" name="Close"
+                              stroke="none" fill="rgba(21,101,192,0.22)" dot={false} connectNulls />
+                          )}
+                          {tradesIn.map(p => {
+                            const c = tradeColor(p.key);
+                            const b = markerDt(rows, p.openDate, p.openDateTime);
+                            const s = markerDt(rows, p.closeDate, p.closeDateTime);
+                            return (
+                              <React.Fragment key={p.key}>
+                                {b && <ReferenceLine yAxisId="price" x={b} stroke={c} strokeWidth={1.5} strokeDasharray="4 3"
+                                  label={{ value: '▲', position: 'insideTopRight', fill: c, fontSize: 9 }} />}
+                                {s && <ReferenceLine yAxisId="price" x={s} stroke={c} strokeWidth={1.5} strokeDasharray="4 3"
+                                  label={{ value: '▼', position: 'insideTopRight', fill: c, fontSize: 9 }} />}
+                              </React.Fragment>
+                            );
+                          })}
+                          {chartType === 'line' && (
+                            <Line yAxisId="price" type="monotone" dataKey="close" name="Close"
+                              stroke="#1565c0" dot={false} strokeWidth={2} connectNulls />
+                          )}
+                          {chartType === 'candle' && (
+                            <>
+                              <Line yAxisId="price" type="monotone" dataKey="close" name="Close"
+                                stroke="none" dot={false} activeDot={false} strokeWidth={0} connectNulls isAnimationActive={false} />
+                              <Customized component={CandlestickLayer} data={rows} />
+                            </>
+                          )}
+                          {hasVix && (
+                            <Line yAxisId="vix" type="monotone" dataKey="vix" name="VIX"
+                              stroke="#ff9800" dot={false} strokeWidth={1.5} strokeDasharray="4 2" connectNulls />
+                          )}
+                          <Brush dataKey="dt" height={22} travellerWidth={8}
+                            stroke="#90caf9" fill="#f0f4ff"
+                            startIndex={br?.startIndex ?? 0}
+                            endIndex={br?.endIndex ?? Math.max(0, rows.length - 1)}
+                            onChange={({ startIndex, endIndex }) => setMtBrushes(prev => ({ ...prev, [tk]: { startIndex, endIndex } }))}
+                            tickFormatter={() => ''} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+
+                      {rsiRows.length > 0 && rsiRows.some(d => d.rsi !== null) && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 600, color: '#7b1fa2', marginBottom: 2, paddingLeft: 2 }}>
+                            RSI ({rows.length >= 30 ? 14 : 7}) — overbought &gt;70 · oversold &lt;30
+                          </div>
+                          <ResponsiveContainer width="100%" height={90}>
+                            <ComposedChart data={rsiRows} margin={{ top: 4, right: hasVix ? 56 : 16, left: 0, bottom: 0 }}>
+                              <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
+                                tick={{ fontSize: 8, fill: 'var(--os-text-3)' }} interval="preserveStartEnd"
+                                axisLine={false} tickLine={false} />
+                              <YAxis domain={[0, 100]} ticks={[30, 50, 70]}
+                                tick={{ fontSize: 8, fill: 'var(--os-text-3)' }} axisLine={false} tickLine={false} width={34} />
+                              <Tooltip formatter={(v) => [v !== null ? v.toFixed(1) : '—', 'RSI']}
+                                contentStyle={{ fontSize: 11, borderRadius: 6, padding: '4px 10px' }} />
+                              <ReferenceArea y1={70} y2={100} fill="rgba(229,57,53,0.08)" stroke="none" />
+                              <ReferenceArea y1={0} y2={30} fill="rgba(0,200,83,0.08)" stroke="none" />
+                              <ReferenceLine y={70} stroke="#e53935" strokeDasharray="4 2" strokeWidth={1} />
+                              <ReferenceLine y={30} stroke="#00c853" strokeDasharray="4 2" strokeWidth={1} />
+                              <Line type="monotone" dataKey="rsi" name="RSI" stroke="#7b1fa2" dot={false} strokeWidth={1.5} connectNulls />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        );
+      })()}
+
+      {trades.length === 0 && (
+        <div style={styles.empty}>
+        <div style={{ color: '#4c7daf' }}><ChartUpIcon size={48} /></div>
+          <div>Add your Robinhood credentials via the gear button, then click <strong>Load Trades</strong> to begin.</div>
+        </div>
+      )}
+
+      {/* ── win / loss fingerprint comparison ──
+          Always rendered once trades are loaded (persistent): with a narrow
+          selection one side may simply have no qualifying trades — we show an
+          explicit empty state instead of making the whole grid vanish. */}
+      {positions.length > 0 && (
         <div style={{ margin: '12px 24px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 
           {/* WIN fingerprint */}
-          {winPattern && (
-            <div style={{ ...styles.patternCard, background: 'linear-gradient(135deg,#e8f5e9,#f1f8e9)', border: '1px solid #c8e6c9' }}>
-              <div style={{ ...styles.patternTitle, color: '#2e7d32' }}>
-                🏆 Winning Pattern
-                <span style={styles.patternSub}> — {winPattern.count} trades with 2x+ gain</span>
-              </div>
-              <PatternStats pattern={winPattern} color="#2e7d32" chipColor="#2e7d32" onTickerClick={setTF} />
+          <div style={{ ...styles.patternCard, background: 'linear-gradient(135deg,#e8f5e9,#f1f8e9)', border: '1px solid #c8e6c9' }}>
+            <div style={{ ...styles.patternTitle, color: '#2e7d32' }}>
+              <TrophyIcon size={17} /> Winning Pattern
+              {multiSel.size > 0 && (
+                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, background: '#ff9800', color: '#fff', borderRadius: 4, padding: '1px 6px', verticalAlign: 'middle' }}>
+                  SELECTED {multiSel.size}
+                </span>
+              )}
+              <span style={styles.patternSub}> — {winPattern ? `${winPattern.count} trades with 2x+ gain` : 'none in scope'}</span>
             </div>
-          )}
+            {winPattern
+              ? <PatternStats pattern={winPattern} color="#2e7d32" chipColor="#2e7d32" onTickerClick={setTF} />
+              : <div style={{ fontSize: 12, color: 'var(--os-text-3)', padding: '10px 0' }}>
+                  No trades with gain ratio ≥ 2x {multiSel.size > 0 ? 'in the selection' : 'in the current filter'}.
+                </div>}
+          </div>
 
           {/* LOSS fingerprint */}
-          {lossPattern && (
-            <div style={{ ...styles.patternCard, background: 'linear-gradient(135deg,#fce4ec,#fff8f8)', border: '1px solid #ffcdd2' }}>
-              <div style={{ ...styles.patternTitle, color: '#c62828' }}>
-                ⚠️ Loss Pattern
-                <span style={styles.patternSub}> — {lossPattern.count} trades losing &gt;50%</span>
-              </div>
-              <PatternStats pattern={lossPattern} color="#c62828" chipColor="#c62828" onTickerClick={setTF} />
+          <div style={{ ...styles.patternCard, background: 'linear-gradient(135deg,#fce4ec,#fff8f8)', border: '1px solid #ffcdd2' }}>
+            <div style={{ ...styles.patternTitle, color: '#c62828' }}>
+              <TrendDownIcon size={17} /> Losing Pattern
+              {multiSel.size > 0 && (
+                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, background: '#ff9800', color: '#fff', borderRadius: 4, padding: '1px 6px', verticalAlign: 'middle' }}>
+                  SELECTED {multiSel.size}
+                </span>
+              )}
+              <span style={styles.patternSub}> — {lossPattern ? `${lossPattern.count} trades losing &gt;50%` : 'none in scope'}</span>
             </div>
-          )}
+            {lossPattern
+              ? <PatternStats pattern={lossPattern} color="#c62828" chipColor="#c62828" onTickerClick={setTF} />
+              : <div style={{ fontSize: 12, color: 'var(--os-text-3)', padding: '10px 0' }}>
+                  No trades losing more than 50% {multiSel.size > 0 ? 'in the selection' : 'in the current filter'}.
+                </div>}
+          </div>
 
         </div>
       )}
@@ -670,34 +1423,35 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
         <div style={styles.card}>
           {/* tab + sort controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--os-border)' }}>
               {['wins', 'losses'].map(v => (
                 <button key={v} onClick={() => setTableView(v)}
-                  style={{ ...styles.tabBtn, background: tableView === v ? '#1976d2' : '#fff',
-                    color: tableView === v ? '#fff' : '#555' }}>
+                  style={{ ...styles.tabBtn, background: tableView === v ? '#1976d2' : 'var(--os-surface)',
+                    color: tableView === v ? '#fff' : 'var(--os-text-2)' }}>
                   {v === 'wins' ? `▲ Top Wins` : `▼ Worst Losses`}
                 </button>
               ))}
             </div>
-            <span style={{ fontSize: 11, color: '#999' }}>Sort by:</span>
+            <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>Sort by:</span>
             {[['gainRatio', 'Gain Ratio'], ['pl', 'P&L'], ['held', 'Hold Time']].map(([k, label]) => (
               <button key={k} onClick={() => setTableSort(k)}
                 style={{ ...styles.sortBtn, fontWeight: tableSort === k ? 700 : 400,
-                  color: tableSort === k ? '#1976d2' : '#666',
+                  color: tableSort === k ? '#1976d2' : 'var(--os-text-2)',
                   borderBottom: tableSort === k ? '2px solid #1976d2' : '2px solid transparent' }}>
                 {label}
               </button>
             ))}
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#aaa' }}>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--os-text-3)' }}>
               Top 15 — click a row to replay
             </span>
           </div>
 
           {/* table */}
+          <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                {['Ticker', 'Type', 'Strike', 'Expiry', 'Open', 'Close', 'Held', 'Buy', 'Sell', 'Gain Ratio', 'P&L'].map(h => (
+                {['Ticker', 'Type', 'Strike', 'Expiry', 'Buy Time', 'Sell Time', 'Held', 'Buy $', 'Sell $', 'Gain Ratio', 'P&L'].map(h => (
                   <th key={h} style={styles.th}>{h}</th>
                 ))}
               </tr>
@@ -708,14 +1462,14 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                 const isSel = selected?.key === row.key;
                 return (
                   <tr key={row.key} onClick={() => selectTrade(row)}
-                    style={{ ...styles.tr, background: isSel ? '#e3f2fd' : i % 2 ? '#fafafa' : '#fff',
+                    style={{ ...styles.tr, background: isSel ? 'rgba(25,118,210,0.16)' : i % 2 ? 'rgba(127,127,127,0.06)' : 'transparent',
                       cursor: 'pointer' }}>
                     <td style={{ ...styles.td, fontWeight: 600 }}>{row.ticker}</td>
                     <td style={{ ...styles.td, color: row.type === 'Call' ? '#1976d2' : '#7b1fa2' }}>{row.type}</td>
                     <td style={styles.td}>${row.strike}</td>
                     <td style={styles.td}>{row.expiry}</td>
-                    <td style={styles.td}>{toISO(row.openDate)}</td>
-                    <td style={styles.td}>{toISO(row.closeDate)}</td>
+                    <td style={styles.td}>{fmtDateTime(row.openDateTime)}</td>
+                    <td style={styles.td}>{fmtDateTime(row.closeDateTime)}</td>
                     <td style={styles.td}>{row.heldDays}d</td>
                     <td style={styles.td}>{fmt(row.buyAmount)}</td>
                     <td style={styles.td}>{fmt(row.sellAmount)}</td>
@@ -730,6 +1484,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -745,7 +1500,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
               </span>
               <span style={styles.tradeExpiry}> · Expiry {selected.expiry}</span>
             </div>
-            <button style={styles.closeBtn} onClick={() => setSelected(null)}>✕</button>
+            <button style={{ ...styles.closeBtn, display: 'flex', alignItems: 'center' }} onClick={() => setSelected(null)} aria-label="Close trade detail"><CloseIcon size={14} /></button>
           </div>
 
           {/* KPI strip */}
@@ -755,11 +1510,11 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                 color: selected.gainRatio >= 2 ? '#00c853' : selected.gainRatio >= 1 ? '#66bb6a' : '#ef5350' },
               { label: 'P&L', value: holdPnl,
                 color: selected.pl >= 0 ? '#00c853' : '#ef5350' },
-              { label: 'Buy Price', value: fmt(selected.buyAmount / (selected.buyQty || 1)) + '/contract', color: '#333' },
-              { label: 'Sell Price', value: fmt(selected.sellAmount / (selected.sellQty || 1)) + '/contract', color: '#333' },
-              { label: 'Open Date',  value: toISO(selected.openDate),  color: '#1976d2' },
-              { label: 'Close Date', value: toISO(selected.closeDate), color: '#e53935' },
-              { label: 'Held',       value: holdDays != null ? `${holdDays}d` : '—', color: '#555' },
+              { label: 'Buy Price', value: fmt(selected.buyAmount / (selected.buyQty || 1)) + '/contract', color: 'var(--os-text)' },
+              { label: 'Sell Price', value: fmt(selected.sellAmount / (selected.sellQty || 1)) + '/contract', color: 'var(--os-text)' },
+              { label: 'Buy Time',  value: fmtDateTime(selected.openDateTime),  color: '#1976d2' },
+              { label: 'Sell Time', value: fmtDateTime(selected.closeDateTime), color: '#e53935' },
+              { label: 'Held',       value: holdDays != null ? `${holdDays}d` : '—', color: 'var(--os-text-2)' },
             ].map(k => (
               <div key={k.label} style={styles.kpi}>
                 <div style={styles.kpiLabel}>{k.label}</div>
@@ -772,22 +1527,22 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
           <div style={styles.chartSection}>
             {/* ── settings bar ── */}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-              {[['line','📈 Line'],['area','🏔 Area'],['candle','🕯 Candle']].map(([ct, label]) => (
+              {[['line','Line'],['area','Area'],['candle','Candle']].map(([ct, label]) => (
                 <button key={ct} onClick={() => setChartType(ct)} style={{
                   padding: '3px 12px', fontSize: 11, borderRadius: 4, cursor: 'pointer', fontWeight: 600,
-                  background: chartType === ct ? '#1565c0' : '#f0f4fa',
-                  color: chartType === ct ? '#fff' : '#555',
-                  border: chartType === ct ? '1px solid #1565c0' : '1px solid #dde3ee',
+                  background: chartType === ct ? '#1565c0' : 'var(--os-surface)',
+                  color: chartType === ct ? '#fff' : 'var(--os-text-2)',
+                  border: chartType === ct ? '1px solid #1565c0' : '1px solid var(--os-border)',
                 }}>{label}</button>
               ))}
-              <div style={{ width: 1, height: 18, background: '#e0e0e0', margin: '0 4px' }} />
-              <span style={{ fontSize: 11, color: '#888' }}>Interval:</span>
+              <div style={{ width: 1, height: 18, background: 'var(--os-border)', margin: '0 4px' }} />
+              <span style={{ fontSize: 11, color: 'var(--os-text-3)' }}>Interval:</span>
               {['auto','1m','5m','15m','1h','1d'].map(iv => (
                 <button key={iv} onClick={() => setOI(iv)} style={{
                   padding: '3px 9px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
-                  background: overrideInterval === iv ? '#ff9800' : '#f5f5f5',
-                  color: overrideInterval === iv ? '#fff' : '#666',
-                  border: overrideInterval === iv ? '1px solid #ff9800' : '1px solid #e0e0e0',
+                  background: overrideInterval === iv ? '#ff9800' : 'var(--os-border)',
+                  color: overrideInterval === iv ? '#fff' : 'var(--os-text-2)',
+                  border: overrideInterval === iv ? '1px solid #ff9800' : '1px solid var(--os-border)',
                   fontWeight: overrideInterval === iv ? 600 : 400,
                 }}>{iv}</button>
               ))}
@@ -798,18 +1553,18 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                 const needsKey = degraded && history.provider === 'yfinance-fallback';
                 return (
                   <>
-                    <span style={{ fontSize: 10, marginLeft: 4, color: degraded ? '#e53935' : '#aaa' }}>
+                    <span style={{ fontSize: 10, marginLeft: 4, color: degraded ? '#e53935' : 'var(--os-text-3)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                       {degraded
-                        ? `⚠ ${history.requested_interval} unavailable → ${history.interval}${providerLabel}`
+                        ? (<><AlertIcon size={10} /> {history.requested_interval} unavailable → {history.interval}{providerLabel}</>)
                         : `(actual: ${history.interval}${providerLabel})`}
                     </span>
                     {needsKey && (
                       <button onClick={() => setKeysOpen(true)} style={{
                         marginLeft: 8, fontSize: 10, padding: '1px 8px', borderRadius: 4,
                         background: '#fff3e0', border: '1px solid #ff9800', color: '#e65100',
-                        cursor: 'pointer', fontWeight: 600,
+                        cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3,
                       }}>
-                        🔑 Add API key for {history.requested_interval} data ↓
+                        <KeyIcon size={10} /> Add API key for {history.requested_interval} data ↓
                       </button>
                     )}
                   </>
@@ -834,37 +1589,29 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
               )}
               <ResponsiveContainer width="100%" height={350}>
                 <ComposedChart data={chartWithVix} margin={{ top: 14, right: 60, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--os-border)" vertical={false} />
                   <XAxis dataKey="dt"
                     tickFormatter={v => v?.slice(5, 13)}
-                    tick={{ fontSize: 9, fill: '#888' }} interval="preserveStartEnd"
+                    tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} interval="preserveStartEnd"
                     axisLine={false} tickLine={false} />
                   <YAxis yAxisId="price" domain={priceRange}
-                    tick={{ fontSize: 9, fill: '#888' }} axisLine={false} tickLine={false} width={52}
+                    tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false} width={52}
                     tickFormatter={v => '$' + v.toFixed(2)} />
                   <YAxis yAxisId="vix" orientation="right"
-                    tick={{ fontSize: 9, fill: '#bbb' }} axisLine={false} tickLine={false} width={38}
+                    tick={{ fontSize: 9, fill: 'var(--os-text-3)' }} axisLine={false} tickLine={false} width={38}
                     tickFormatter={v => v.toFixed(0)} />
                   <Tooltip content={<StockTip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
 
-                  {/* High-Low shaded band — only in line/area modes */}
-                  {chartType !== 'candle' && (
-                    <Area yAxisId="price" type="monotone" dataKey="high"
-                      stroke="none" fill="rgba(25,118,210,0.13)" connectNulls dot={false}
-                      legendType="none" tooltipType="none" activeDot={false} />
-                  )}
-                  {chartType !== 'candle' && (
-                    <Area yAxisId="price" type="monotone" dataKey="low"
-                      stroke="none" fill="white" connectNulls dot={false}
-                      legendType="none" tooltipType="none" activeDot={false} />
-                  )}
-
-                  {/* Area fill under close — area mode only */}
+                  {/* Area fill under close — area mode only. Exclusive by design:
+                      line mode = pure line, area mode = pure fill (no stroke),
+                      candle mode = candles. The old high/low shaded band was
+                      removed — it read as a stray area plot in line mode and
+                      its white "mask" fill broke the night theme. */}
                   {chartType === 'area' && (
                     <Area yAxisId="price" type="monotone" dataKey="close" name="Close"
-                      stroke="#1565c0" fill="rgba(21,101,192,0.12)"
-                      dot={false} strokeWidth={2} connectNulls />
+                      stroke="none" fill="rgba(21,101,192,0.22)"
+                      dot={false} connectNulls />
                   )}
 
                   {/* hold period shading */}
@@ -891,9 +1638,18 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                       stroke="#1565c0" dot={false} strokeWidth={2.5} connectNulls />
                   )}
 
-                  {/* Candlestick SVG layer */}
+                  {/* Candlestick SVG layer — a Customized layer is invisible to Recharts'
+                      Tooltip (it only reads Line/Area/Bar series), so without a real
+                      series here the tooltip has nothing to key hover position off of.
+                      This invisible Close line supplies that (and the actual candles) —
+                      it's rendered with stroke="none" so only CandlestickLayer is seen. */}
                   {chartType === 'candle' && (
-                    <Customized component={CandlestickLayer} data={chartWithVix} />
+                    <>
+                      <Line yAxisId="price" type="monotone" dataKey="close" name="Close"
+                        stroke="none" dot={false} activeDot={false} strokeWidth={0} connectNulls
+                        isAnimationActive={false} />
+                      <Customized component={CandlestickLayer} data={chartWithVix} />
+                    </>
                   )}
 
                   <Line yAxisId="vix" type="monotone" dataKey="vix" name="VIX"
@@ -926,12 +1682,12 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                 </div>
                 <ResponsiveContainer width="100%" height={140}>
                   <ComposedChart data={rsiData} margin={{ top: 4, right: 60, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--os-border)" vertical={false} />
                     <XAxis dataKey="dt" tickFormatter={v => v?.slice(5, 13)}
-                      tick={{ fontSize: 9, fill: '#888' }} interval="preserveStartEnd"
+                      tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} interval="preserveStartEnd"
                       axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} ticks={[30, 50, 70]}
-                      tick={{ fontSize: 9, fill: '#888' }} axisLine={false} tickLine={false}
+                      tick={{ fontSize: 9, fill: 'var(--os-text-2)' }} axisLine={false} tickLine={false}
                       width={52} tickFormatter={v => v} />
                     <Tooltip formatter={(v) => [v !== null ? v.toFixed(1) : '—', 'RSI']}
                       contentStyle={{ fontSize: 11, borderRadius: 6, padding: '4px 10px' }} />
@@ -942,7 +1698,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                       label={{ value: 'OB', position: 'insideTopRight', fill: '#e53935', fontSize: 9 }} />
                     <ReferenceLine y={30} stroke="#00c853" strokeDasharray="4 2" strokeWidth={1}
                       label={{ value: 'OS', position: 'insideBottomRight', fill: '#00c853', fontSize: 9 }} />
-                    <ReferenceLine y={50} stroke="#ddd" strokeDasharray="2 2" strokeWidth={1} />
+                    <ReferenceLine y={50} stroke="var(--os-border)" strokeDasharray="2 2" strokeWidth={1} />
                     {/* Mirror buy/sell lines */}
                     {buyDt && <ReferenceLine x={buyDt} stroke="#00c853" strokeWidth={2} strokeDasharray="5 3" />}
                     {sellDt && <ReferenceLine x={sellDt} stroke="#e53935" strokeWidth={2} strokeDasharray="5 3" />}
@@ -970,11 +1726,11 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
               <div style={styles.vixContext}>
                 <span>VIX at entry: <strong>{vixAtBuy ? vixAtBuy.vix?.toFixed(1) : '—'}</strong></span>
                 <span style={{ marginLeft: 20 }}>Avg VIX (window): <strong>{avg.toFixed(1)}</strong></span>
-                <span style={{ marginLeft: 20, color: '#888', fontSize: 11 }}>
+                <span style={{ marginLeft: 20, color: 'var(--os-text-3)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                   {vixAtBuy && vixAtBuy.vix > 25
-                    ? '⚠️ High VIX at entry — expensive premium'
+                    ? (<><AlertIcon size={11} /> High VIX at entry — expensive premium</>)
                     : vixAtBuy && vixAtBuy.vix < 15
-                    ? '📉 Low VIX at entry — cheap premium'
+                    ? (<><TrendDownIcon size={11} /> Low VIX at entry — cheap premium</>)
                     : ''}
                 </span>
               </div>
@@ -985,8 +1741,8 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
           {news?.items?.length > 0 && (
             <div style={styles.newsSection}>
               <div style={styles.sectionTitle}>
-                📰 News Context
-                <span style={{ fontWeight: 400, color: '#888', fontSize: 11, marginLeft: 8 }}>
+                <NewsIcon size={13} /> News Context
+                <span style={{ fontWeight: 400, color: 'var(--os-text-3)', fontSize: 11, marginLeft: 8 }}>
                   headlines around your trade dates · may not be historical for older trades
                 </span>
               </div>
@@ -994,13 +1750,13 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                 {(news?.items || []).map((n, i) => (
                   <div key={i} style={{
                     display: 'flex', gap: 10, alignItems: 'flex-start',
-                    padding: '6px 10px', borderRadius: 6, background: '#fff',
+                    padding: '6px 10px', borderRadius: 6, background: 'var(--os-surface)', color: 'var(--os-text)',
                     border: `1px solid ${n.bucket === 'entry' ? '#c8e6c9' : n.bucket === 'exit' ? '#ffcdd2' : '#f0f0f0'}`,
                   }}>
                     <span style={{
                       fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
-                      background: n.bucket === 'entry' ? '#e8f5e9' : n.bucket === 'exit' ? '#fce4ec' : '#f5f5f5',
-                      color:      n.bucket === 'entry' ? '#2e7d32' : n.bucket === 'exit' ? '#c62828' : '#777',
+                      background: n.bucket === 'entry' ? 'rgba(46,125,50,0.15)' : n.bucket === 'exit' ? 'rgba(198,40,40,0.15)' : 'var(--os-bg)',
+                      color:      n.bucket === 'entry' ? '#2e7d32' : n.bucket === 'exit' ? '#c62828' : 'var(--os-text-3)',
                       whiteSpace: 'nowrap', alignSelf: 'center', flexShrink: 0,
                     }}>
                       {n.bucket === 'entry' ? '▲ ENTRY' : n.bucket === 'exit' ? '▼ EXIT' : 'CONTEXT'}
@@ -1010,7 +1766,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                         style={{ fontSize: 12, color: '#1565c0', textDecoration: 'none', fontWeight: 500 }}>
                         {n.title}
                       </a>
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: 'var(--os-text-3)', marginTop: 2 }}>
                         {n.source}{n.date ? ` · ${n.date}` : ''}
                       </div>
                     </div>
@@ -1032,16 +1788,16 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
             return (
               <div style={styles.similarSection}>
                 <div style={styles.sectionTitle}>
-                  📋 Your other {selected.ticker} {selected.type} trades
-                  <span style={{ fontWeight: 400, color: '#888', marginLeft: 8 }}>
+                  <ListIcon size={13} /> Your other {selected.ticker} {selected.type} trades
+                  <span style={{ fontWeight: 400, color: 'var(--os-text-3)', marginLeft: 8 }}>
                     {similar.length} trades · {wins}W/{similar.length - wins}L · avg {avgGR}x · avg {avgPL >= 0 ? '+' : ''}${Math.abs(avgPL).toLocaleString()}
                   </span>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={styles.table}>
                     <thead>
-                      <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                        {['Strike','Expiry','Open','Close','Held','Gain','P&L'].map(h => (
+              <tr style={{ borderBottom: '2px solid var(--os-border)' }}>
+                        {['Strike','Expiry','Buy Time','Sell Time','Held','Gain','P&L'].map(h => (
                           <th key={h} style={styles.th}>{h}</th>
                         ))}
                       </tr>
@@ -1054,11 +1810,11 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                         return (
                           <tr key={s.key} onClick={() => selectTrade(s)}
                             style={{ ...styles.tr, cursor: 'pointer',
-                              background: selected?.key === s.key ? '#e3f2fd' : i % 2 ? '#fafafa' : '#fff' }}>
+                              background: selected?.key === s.key ? 'rgba(25,118,210,0.16)' : i % 2 ? 'rgba(127,127,127,0.06)' : 'transparent' }}>
                             <td style={styles.td}>${s.strike}</td>
                             <td style={styles.td}>{s.expiry}</td>
-                            <td style={styles.td}>{toISO(s.openDate)}</td>
-                            <td style={styles.td}>{toISO(s.closeDate)}</td>
+                            <td style={styles.td}>{fmtDateTime(s.openDateTime)}</td>
+                            <td style={styles.td}>{fmtDateTime(s.closeDateTime)}</td>
                             <td style={styles.td}>{hd}d</td>
                             <td style={{ ...styles.td, fontWeight: 700, color: isWin ? '#00a844' : '#e53935' }}>
                               {s.gainRatio?.toFixed(2)}x
@@ -1078,7 +1834,7 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
 
           {/* journal */}
           <div style={styles.journalSection}>
-            <div style={styles.sectionTitle}>📓 Trade Journal</div>
+            <div style={styles.sectionTitle}><BookIcon size={13} /> Trade Journal</div>
             <div style={styles.journalGrid}>
               {[
                 { key: 'thesis',  label: 'What was your thesis going in?' },
@@ -1109,9 +1865,9 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
 
           {/* ── Provider API keys panel ── */}
           <div style={styles.keysSection}>
-            <button onClick={() => setKeysOpen(o => !o)} style={styles.keysToggle}>
-              🔑 Intraday Data Provider Keys {keysOpen ? '▲' : '▼'}
-              <span style={{ fontWeight: 400, marginLeft: 8, color: '#888' }}>
+            <button onClick={() => setKeysOpen(o => !o)} style={{ ...styles.keysToggle, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <KeyIcon size={12} /> Intraday Data Provider Keys {keysOpen ? '▲' : '▼'}
+              <span style={{ fontWeight: 400, marginLeft: 8, color: 'var(--os-text-3)' }}>
                 {alpacaKey ? '· Alpaca ✓' : ''}{polygonKey ? ' · Polygon ✓' : ''}
                 {!alpacaKey && !polygonKey ? '· not configured — 1h/5m data uses yfinance fallback' : ''}
               </span>
@@ -1150,18 +1906,24 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
                     if (selected) {
                       const openISO  = toISO(selected.openDate);
                       const closeISO = toISO(selected.closeDate);
-                      setLH(true); setHE('');
+                      setLH(true); setHE(''); setPriceBrush(null); setRsiBrush(null);
+                      setTradeCandles({ buyDt: null, sellDt: null });
                       axios.post(`${API}/api/stock-history`, {
                         ticker: selected.ticker, start_date: openISO, end_date: closeISO,
-                        interval: overrideInterval, ...providerKeys(),
-                      }).then(r => setHistory(r.data))
-                        .catch(e => setHE(e?.response?.data?.error || e.message))
+                        interval: overrideInterval, force_refresh: true, ...providerKeys(),
+                      }).then(r => {
+                        setHistory(r.data);
+                        const layout = computeTradeChartLayout(r.data?.ohlcv, openISO, closeISO, r.data?.interval, selected.openDateTime, selected.closeDateTime);
+                        setPriceBrush(layout.brush);
+                        setTradeCandles({ buyDt: layout.buyDt, sellDt: layout.sellDt });
+                        setRsiBrush(null);
+                      }).catch(e => setHE(e?.response?.data?.error || e.message))
                         .finally(() => setLH(false));
                     }
                   }}>
                     ↻ Re-fetch with new keys
                   </button>
-                  <span style={{ fontSize: 11, color: '#aaa', alignSelf: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--os-text-3)', alignSelf: 'center' }}>
                     Keys are saved in your browser — never sent anywhere except directly to the provider API.
                   </span>
                 </div>
@@ -1171,6 +1933,8 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
 
         </div>
       )}
+
+      <TradingNotes />
     </div>
   );
 }
@@ -1178,9 +1942,13 @@ export default function TradeReplayDemo({ onBack, initialTrades, initialFilter, 
 // ── styles ─────────────────────────────────────────────────────────────────────
 
 const styles = {
+  // Theme-aware via index.css tokens (--os-*) — flips with the day/night
+  // toggle instead of inheriting body text onto hardcoded white surfaces,
+  // which rendered white-on-white in night mode.
   root: {
     fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-    background: '#f5f7fa', minHeight: '100vh', padding: '0 0 60px',
+    background: 'var(--os-bg)', color: 'var(--os-text)', minHeight: '100vh', padding: '0 0 60px',
+    transition: 'background .25s ease, color .25s ease',
   },
   header: {
     background: '#1976d2', color: '#fff', padding: '14px 24px',
@@ -1195,34 +1963,41 @@ const styles = {
   },
   credRow: {
     display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-    padding: '14px 24px', background: '#fff', borderBottom: '1px solid #eee',
+    padding: '14px 24px', background: 'var(--os-surface)', borderBottom: '1px solid var(--os-border)',
   },
   filterRow: {
     display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
-    padding: '10px 24px', background: '#fff', borderBottom: '1px solid #eee',
+    padding: '10px 24px', background: 'var(--os-surface)', borderBottom: '1px solid var(--os-border)',
   },
-  filterLabel: { fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6 },
+  filterLabel: { fontSize: 12, color: 'var(--os-text-2)', display: 'flex', alignItems: 'center', gap: 6 },
   inp: {
-    padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6,
+    padding: '7px 10px', border: '1px solid var(--os-border)', borderRadius: 6,
     fontSize: 13, outline: 'none', width: 200,
+    background: 'var(--os-surface)', color: 'var(--os-text)',
   },
   sel: {
-    padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6,
+    padding: '6px 8px', border: '1px solid var(--os-border)', borderRadius: 6,
     fontSize: 13, outline: 'none', cursor: 'pointer',
+    background: 'var(--os-surface)', color: 'var(--os-text)',
   },
   btn: {
     padding: '7px 16px', background: '#1976d2', color: '#fff',
     border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500,
   },
+  gearBtn: {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '7px 12px', background: 'var(--os-surface)', color: 'var(--os-text-2)',
+    border: '1px solid var(--os-border)', borderRadius: 6, cursor: 'pointer', fontSize: 13,
+  },
   err:  { fontSize: 12, color: '#e53935' },
   ok:   { fontSize: 12, color: '#00a844' },
   card: {
-    margin: '16px 24px 0', background: '#fff', borderRadius: 8,
-    padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+    margin: '16px 24px 0', background: 'var(--os-surface)', borderRadius: 8,
+    padding: '14px 16px', boxShadow: 'var(--os-shadow-1)',
   },
-  cardTitle: { fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 10 },
+  cardTitle: { fontSize: 13, fontWeight: 600, color: 'var(--os-text)', marginBottom: 10 },
   empty: {
-    margin: '60px auto', textAlign: 'center', color: '#aaa', fontSize: 15,
+    margin: '60px auto', textAlign: 'center', color: 'var(--os-text-3)', fontSize: 15,
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
   },
   patternCard: {
@@ -1244,15 +2019,15 @@ const styles = {
   patternHint: { fontSize: 11, color: '#666', marginTop: 10, fontStyle: 'italic' },
   tabBtn:  { padding: '6px 14px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 },
   sortBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 6px' },
-  table:   { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
-  th:      { padding: '6px 10px', textAlign: 'left', fontSize: 10, color: '#999',
+  table:   { width: '100%', borderCollapse: 'collapse', fontSize: 12, color: 'var(--os-text)' },
+  th:      { padding: '6px 10px', textAlign: 'left', fontSize: 10, color: 'var(--os-text-3)',
              textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600 },
-  tr:      { transition: 'background 0.1s', borderBottom: '1px solid #f5f5f5' },
-  td:      { padding: '7px 10px', whiteSpace: 'nowrap' },
+  tr:      { transition: 'background 0.1s', borderBottom: '1px solid var(--os-border)' },
+  td:      { padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--os-text)' },
   loading: { color: '#1976d2', fontSize: 12 },
   detailPanel: {
-    margin: '16px 24px 0', background: '#fff', borderRadius: 8,
-    boxShadow: '0 1px 6px rgba(0,0,0,0.1)', overflow: 'hidden',
+    margin: '16px 24px 0', background: 'var(--os-surface)', borderRadius: 8,
+    boxShadow: 'var(--os-shadow-2)', overflow: 'hidden',
   },
   tradeHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -1266,48 +2041,49 @@ const styles = {
   },
   kpiRow: {
     display: 'flex', flexWrap: 'wrap', gap: 0,
-    borderBottom: '1px solid #f0f0f0',
+    borderBottom: '1px solid var(--os-border)',
   },
   kpi: {
     flex: '1 1 120px', padding: '12px 20px',
-    borderRight: '1px solid #f5f5f5',
+    borderRight: '1px solid var(--os-border)',
   },
-  kpiLabel: { fontSize: 10, color: '#999', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 },
-  kpiValue: { fontSize: 16, fontWeight: 700 },
+  kpiLabel: { fontSize: 10, color: 'var(--os-text-3)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 },
+  kpiValue: { fontSize: 16, fontWeight: 700, color: 'var(--os-text)' },
   chartSection: { padding: '16px 20px' },
-  sectionTitle: { fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 10 },
+  sectionTitle: { fontSize: 13, fontWeight: 600, color: 'var(--os-text-2)', marginBottom: 10 },
   vixContext: {
-    padding: '10px 20px 14px', background: '#fafafa',
-    borderTop: '1px solid #f0f0f0', fontSize: 13, color: '#333',
+    padding: '10px 20px 14px', background: 'var(--os-bg)',
+    borderTop: '1px solid var(--os-border)', fontSize: 13, color: 'var(--os-text)',
   },
-  newsSection:    { padding: '14px 20px', borderTop: '1px solid #f0f0f0', background: '#fafefe' },
-  similarSection: { padding: '14px 20px', borderTop: '1px solid #f0f0f0', background: '#fafafa' },
-  journalSection: { padding: '16px 20px 20px', borderTop: '1px solid #f0f0f0' },
+  newsSection:    { padding: '14px 20px', borderTop: '1px solid var(--os-border)', background: 'var(--os-surface)' },
+  similarSection: { padding: '14px 20px', borderTop: '1px solid var(--os-border)', background: 'var(--os-bg)' },
+  journalSection: { padding: '16px 20px 20px', borderTop: '1px solid var(--os-border)' },
   resetZoom: {
     fontSize: 11, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
     background: '#e3f2fd', border: '1px solid #90caf9', color: '#1565c0', fontWeight: 600,
   },
-  keysSection: { borderTop: '1px solid #f0f0f0', background: '#fafafa' },
+  keysSection: { borderTop: '1px solid var(--os-border)', background: 'var(--os-bg)' },
   keysToggle: {
     width: '100%', textAlign: 'left', padding: '12px 20px',
     background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: 13, fontWeight: 600, color: '#555',
+    fontSize: 13, fontWeight: 600, color: 'var(--os-text-2)',
   },
   keysBody: { padding: '0 20px 16px', display: 'flex', flexDirection: 'column', gap: 4 },
-  keysInfo: { fontSize: 12, color: '#666', margin: '4px 0' },
+  keysInfo: { fontSize: 12, color: 'var(--os-text-2)', margin: '4px 0' },
   keysRow: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
-  keysLabel: { fontSize: 11, color: '#888', whiteSpace: 'nowrap' },
+  keysLabel: { fontSize: 11, color: 'var(--os-text-3)', whiteSpace: 'nowrap' },
   keysInput: {
     flex: '1 1 200px', padding: '5px 10px', fontSize: 12,
-    border: '1px solid #ddd', borderRadius: 6, outline: 'none',
-    background: '#fff', fontFamily: 'monospace',
+    border: '1px solid var(--os-border)', borderRadius: 6,
+    outline: 'none', background: 'var(--os-surface)', color: 'var(--os-text)',
+    fontFamily: 'monospace',
   },
   journalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 },
   journalLabel: { display: 'flex', flexDirection: 'column', gap: 4 },
-  journalQ: { fontSize: 12, fontWeight: 600, color: '#555' },
+  journalQ: { fontSize: 12, fontWeight: 600, color: 'var(--os-text-2)' },
   journalTA: {
-    resize: 'vertical', border: '1px solid #ddd', borderRadius: 6,
-    padding: '8px 10px', fontSize: 12, fontFamily: 'inherit',
-    outline: 'none', background: '#fafafa', lineHeight: 1.5,
+    resize: 'vertical', border: '1px solid var(--os-border)', borderRadius: 6,
+    padding: '8px 10px', fontSize: 12, fontFamily: 'inherit', color: 'var(--os-text)',
+    outline: 'none', background: 'var(--os-bg)', lineHeight: 1.5,
   },
 };

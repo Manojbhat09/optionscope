@@ -1,5 +1,6 @@
 # app.py
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
+import os
 from get_rh_options_app import fetch_and_update_orders, delete_cache
 import robin_stocks.robinhood as r
 from flask_cors import CORS
@@ -8,6 +9,8 @@ import numpy as np
 import yfinance as yf
 import json, math
 from chatbot_service import chatbot_bp
+from spot_replay_service import spot_bp
+from chat_history import history_bp
 
 
 DATE_FIELDS = {'Activity Date', 'Process Date', 'Settle Date'}
@@ -43,11 +46,47 @@ def safe_jsonify(records):
     """Serialize a list of clean dicts as a Flask JSON Response."""
     return Response(json.dumps(records), mimetype='application/json')
 
-app = Flask(__name__)
+# Build dir is overridable so the desktop app's Electron shell can point us
+# at its bundled copy; source runs fall back to the repo layout.
+BUILD_DIR = os.environ.get('OPTIONSCOPE_BUILD_DIR') or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'build')
+app = Flask(__name__, static_folder=os.path.join(BUILD_DIR, 'static'),
+            static_url_path='/Manojbhat09/optionscope/static')
 CORS(app)
+
+# ── single-server production mode ────────────────────────────────────────────
+# If a production frontend build exists (npm run build), serve it from this
+# same Flask process — then the whole app is ONE command and one port, which
+# is what the START_HERE launchers, the desktop sidecar and GitHub release
+# builds all rely on.
+
+@app.route('/Manojbhat09/optionscope')
+@app.route('/Manojbhat09/optionscope/')
+def serve_frontend_index():
+    index_file = os.path.join(BUILD_DIR, 'index.html')
+    if os.path.exists(index_file):
+        with open(index_file, 'r', encoding='utf-8') as f:
+            return f.read()
+    return "Frontend not built yet. Run: npm install && npm run build  (or use START_HERE)", 200
+
+@app.route('/Manojbhat09/optionscope/<path:filename>')
+def serve_frontend_asset(filename):
+    full = os.path.normpath(os.path.join(BUILD_DIR, filename))
+    if full.startswith(BUILD_DIR) and os.path.isfile(full):
+        return send_file(full)
+    # SPA fallback for client-side routes
+    index_file = os.path.join(BUILD_DIR, 'index.html')
+    if os.path.exists(index_file):
+        with open(index_file, 'r', encoding='utf-8') as f:
+            return f.read()
+    return 'Not found', 404
 
 # Register the chatbot blueprint
 app.register_blueprint(chatbot_bp)
+app.register_blueprint(spot_bp)
+app.register_blueprint(history_bp)
+from agent_bridge import agent_bp  # agent control plane (files/agent-mcp-design.md)
+app.register_blueprint(agent_bp, url_prefix='/api/agent')
 
 '''
  Index(['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'], dtype='object')
@@ -121,11 +160,11 @@ def clear_cache():
     end_date = data.get('endDate')
     csv_file = data.get('fileName', 'orders.csv')
 
-    # Delete cached files
+    # Delete cached data for this account
     try:
-        delete_cache(csv_file)
-    except FileNotFoundError:
-        print(f"{csv_file} not found or some error in deleting")
+        delete_cache(csv_file, username=username)
+    except Exception as e:
+        print(f"Cache clear for {csv_file} failed or nothing to clear: {e}")
 
     # Refetch data
     try:
@@ -188,14 +227,14 @@ def get_news():
     return jsonify({'ticker': ticker, 'items': items[:12]})
 
 
-import os, time as _time
+import os
+
+from cache_store import FileCacheStore
 
 # ── stock-history cache setup ──────────────────────────────────────────────────
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 _CACHE_DIR   = os.path.join(_BACKEND_DIR, 'stock_cache')
-_BACKUP_DIR  = os.path.join(_BACKEND_DIR, 'backup')
-os.makedirs(_CACHE_DIR,  exist_ok=True)
-os.makedirs(_BACKUP_DIR, exist_ok=True)
+_stock_store = FileCacheStore(_CACHE_DIR)
 
 # Max age before re-fetching (intraday data changes fast, daily is stable)
 _CACHE_TTL = {'1m': 300, '2m': 300, '5m': 600, '15m': 1800,
@@ -213,27 +252,38 @@ _INTERVAL_FALLBACK = {
 def _cache_key(ticker, fetch_start, fetch_end, interval):
     return f"{ticker}_{fetch_start}_{fetch_end}_{interval}".replace('/', '-')
 
-def _load_stock_cache(key, interval):
-    path = os.path.join(_CACHE_DIR, f"{key}.json")
-    if not os.path.exists(path):
+def _load_stock_cache(key, desired_interval):
+    cached = _stock_store.get(key)
+    if not cached:
         return None
-    ttl = _CACHE_TTL.get(interval, 86400)
-    if _time.time() - os.path.getmtime(path) > ttl:
+    stored_interval = cached.get('interval', desired_interval)
+    settled_for_less = cached.get('provider') == 'yfinance-fallback' and stored_interval != desired_interval
+    if settled_for_less:
+        # This wasn't the interval actually asked for — every real-time
+        # provider (Alpaca, Polygon) was unavailable or failed at fetch
+        # time, possibly for a fixable reason (no API key configured yet,
+        # a transient provider error). Retry again soon using the
+        # originally-desired interval's TTL, rather than trusting this
+        # compromise for a full day — otherwise adding a working API key
+        # can't take effect until the stale fallback expires on its own.
+        ttl = _CACHE_TTL.get(desired_interval, 300)
+    else:
+        # TTL must reflect the granularity actually stored, not just the one
+        # the caller asked for — a request for '1m' that's structurally too
+        # old for any provider (all agree on '1d') stores '1d' data under
+        # this key, and that data is only as stale-prone as '1d' data, not
+        # '1m' data. Using the payload's own `interval` field (rather than
+        # `desired_interval`) to pick the TTL bucket avoids re-fetching
+        # daily data every 5 minutes just because it's cached under a "1m"
+        # lookup key.
+        ttl = _CACHE_TTL.get(stored_interval, 86400)
+    age = _stock_store.age_seconds(key)
+    if age is None or age > ttl:
         return None          # stale — re-fetch
-    with open(path) as f:
-        return json.load(f)
+    return cached
 
-def _save_stock_cache(key, payload, interval):
-    # Primary cache (overwritten each fetch)
-    cache_path = os.path.join(_CACHE_DIR, f"{key}.json")
-    with open(cache_path, 'w') as f:
-        json.dump(payload, f)
-    # Timestamped backup (never overwritten)
-    from datetime import datetime as _dt
-    ts = _dt.now().strftime('%Y%m%d_%H%M%S')
-    backup_path = os.path.join(_BACKUP_DIR, f"{key}_{ts}.json")
-    with open(backup_path, 'w') as f:
-        json.dump(payload, f)
+def _save_stock_cache(key, payload):
+    _stock_store.set(key, payload)
 
 
 def _df_to_records(df):
@@ -437,12 +487,17 @@ def get_stock_history():
         elif age_days <= 720: desired = '1h'
         else:                desired = '1d'
 
-    # Check cache
+    # Check cache — unless the caller explicitly wants a fresh attempt (e.g.
+    # the "Re-fetch with new keys" button), which must actually re-fetch even
+    # if a still-fresh cache entry exists, or it'd just re-serve the same
+    # recently-cached fallback the user is trying to get past.
+    force_refresh = bool(data.get('force_refresh'))
     cache_key = _cache_key(ticker, fetch_start, fetch_end, desired)
-    cached = _load_stock_cache(cache_key, desired)
-    if cached:
-        cached['from_cache'] = True
-        return jsonify(cached)
+    if not force_refresh:
+        cached = _load_stock_cache(cache_key, desired)
+        if cached:
+            cached['from_cache'] = True
+            return jsonify(cached)
 
     # Keys from request body override env vars (user-supplied from the UI)
     req_alpaca_key    = data.get('alpaca_key', '')
@@ -485,14 +540,83 @@ def get_stock_history():
         'vix':        _df_to_records(vix_raw[['datetime','Close']].rename(columns={'Close':'vix'})),
     }
 
-    # Persist to cache + timestamped backup
+    # Persist to cache
     try:
-        _save_stock_cache(cache_key, payload, actual_interval)
+        _save_stock_cache(cache_key, payload)
     except Exception as ce:
         print(f"  cache write error: {ce}")
 
     return jsonify(payload)
 
 
+@app.route("/api/health")
+def api_health():
+    """Liveness/readiness probe — polled by the desktop launcher."""
+    return jsonify({"ok": True, "service": "optionscope-backend"})
+
+
+# ── app-settings ↔ .env persistence (Settings → Preferences) ─────────────────
+# Frontend settings live in localStorage; these endpoints export them to (and
+# read them back from) the OS_* section of backend/.env so a fresh install or
+# wiped browser profile can reseed its defaults. Non-OS_ lines in .env (e.g.
+# manually-added server keys) are always preserved verbatim.
+
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+
+def _read_os_env():
+    values, seed = {}, False
+    try:
+        with open(_ENV_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if k == "OS_ENV_SEED":
+                    seed = v.lower() in ("1", "true", "yes", "on")
+                elif k.startswith("OS_"):
+                    values[k] = v
+    except FileNotFoundError:
+        pass
+    return values, seed
+
+
+@app.route("/api/app-settings/env", methods=["GET", "PUT"])
+def app_settings_env():
+    if request.method == "GET":
+        values, seed = _read_os_env()
+        return jsonify(seed=seed, values=values, path=_ENV_PATH)
+
+    body = request.get_json(silent=True) or {}
+    values = body.get("values") or {}
+    seed = bool(body.get("seed"))
+    try:
+        kept = []
+        if os.path.exists(_ENV_PATH):
+            with open(_ENV_PATH) as f:
+                for line in f:
+                    s = line.strip()
+                    if s and not s.startswith("#") and "=" in s and s.split("=", 1)[0].strip().startswith("OS_"):
+                        continue  # drop old OS_* lines — replaced below
+                    kept.append(line.rstrip("\n"))
+        while kept and not kept[-1].strip():
+            kept.pop()
+        kept.append("")
+        kept.append("# ── OptionScope settings (Settings → Preferences → env persistence) ──")
+        kept.append(f"OS_ENV_SEED={'1' if seed else '0'}")
+        for k in sorted(values):
+            if not k.startswith("OS_"):
+                k = "OS_" + k
+            kept.append(f"{k}={values[k]}")
+        with open(_ENV_PATH, "w") as f:
+            f.write("\n".join(kept) + "\n")
+        return jsonify(ok=True, written=len(values) + 1, path=_ENV_PATH)
+    except OSError as e:
+        return jsonify(error=f"could not write {_ENV_PATH}: {e}"), 500
+
+
 if __name__ == '__main__':
-  app.run(debug=True)
+  port = int(os.environ.get('PORT', 5000))
+  app.run(debug=True, host='127.0.0.1', port=port)

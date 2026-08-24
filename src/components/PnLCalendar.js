@@ -7,6 +7,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import './PnLCalendar.css';
+import { LogoIcon, SearchIcon, CalendarIcon } from './icons';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,26 @@ function monthLabel(key) {                // "2024-03" → "Mar '24"
 function weekLabel(key) {                 // "2024-03-04" → "Mar 4"
   const d = new Date(key);
   return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getDate();
+}
+
+// ── period → [start, end] date range, for click-to-scope ──────────────────────
+
+function monthRange(key) {                // "2024-03" → ["2024-03-01", "2024-03-31"]
+  const [y, m] = key.split('-').map(Number);
+  const start = `${key}-01`;
+  const end = new Date(y, m, 0).toISOString().slice(0, 10); // day 0 of next month = last day of this month
+  return [start, end];
+}
+function weekRange(key) {                 // "2024-03-04" (Monday) → +6 days
+  const d = new Date(key);
+  d.setDate(d.getDate() + 6);
+  return [key, d.toISOString().slice(0, 10)];
+}
+function yearRange(key) {                 // "2024" → ["2024-01-01", "2024-12-31"]
+  return [`${key}-01-01`, `${key}-12-31`];
+}
+function dayRange(dateStr) {
+  return [dateStr, dateStr];
 }
 
 // ── aggregation ───────────────────────────────────────────────────────────────
@@ -145,7 +166,7 @@ const BarTooltip = ({ active, payload, label }) => {
 // ── heatmap cell colour ───────────────────────────────────────────────────────
 
 function heatColor(value, max) {
-  if (!value || value.pnl === 0) return '#e0e0e0';
+  if (!value || value.pnl === 0) return 'var(--os-border)';
   const ratio = Math.min(Math.abs(value.pnl) / (max || 1), 1);
   if (value.pnl > 0) {
     const g = Math.round(100 + 155 * ratio);
@@ -157,7 +178,7 @@ function heatColor(value, max) {
 
 // ── monthly grid component ────────────────────────────────────────────────────
 
-function MonthGrid({ monthRows }) {
+function MonthGrid({ monthRows, onSelect }) {
   const maxAbs = useMemo(() => Math.max(...monthRows.map(r => Math.abs(r.pnl)), 1), [monthRows]);
 
   // Group by year
@@ -195,10 +216,11 @@ function MonthGrid({ monthRows }) {
               const bg = cell.pnl > 0
                 ? `rgba(0, ${Math.round(130 + 125 * ratio)}, 60, ${0.25 + 0.75 * ratio})`
                 : `rgba(${Math.round(180 + 75 * ratio)}, 30, 30, ${0.25 + 0.75 * ratio})`;
-              const textColor = ratio > 0.4 ? '#fff' : (cell.pnl > 0 ? '#005a1f' : '#7a0000');
+              const textColor = ratio > 0.4 ? '#fff' : (cell.pnl > 0 ? 'var(--os-pos)' : 'var(--os-neg)');
               return (
-                <div key={mo} className="pnl-month-cell" style={{ background: bg, color: textColor }}
-                  title={`${name} ${yr}: ${fmt(cell.pnl)} | ${cell.trades} trades | ${cell.wins}W/${cell.losses}L`}>
+                <div key={mo} className="pnl-month-cell" style={{ background: bg, color: textColor, cursor: 'pointer' }}
+                  title={`${name} ${yr}: ${fmt(cell.pnl)} | ${cell.trades} trades | ${cell.wins}W/${cell.losses}L — click to zoom in`}
+                  onClick={() => onSelect(...monthRange(cell.key))}>
                   <span className="pnl-month-name">{name}</span>
                   <span className="pnl-month-amount">{fmt(cell.pnl, true)}</span>
                   <span className="pnl-month-wr">{cell.trades}t · {cell.wins}W</span>
@@ -210,7 +232,7 @@ function MonthGrid({ monthRows }) {
       ))}
       <div className="pnl-legend" style={{ marginTop: 10 }}>
         <span>Loss</span>
-        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','#e0e0e0','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
+        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','var(--os-border)','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
           <span key={i} style={{ display:'inline-block', width:14, height:14, background:c, borderRadius:3, verticalAlign:'middle' }} />
         ))}
         <span>Gain</span>
@@ -221,7 +243,7 @@ function MonthGrid({ monthRows }) {
 
 // ── weekly grid component ─────────────────────────────────────────────────────
 
-function WeekGrid({ weekRows }) {
+function WeekGrid({ weekRows, onSelect }) {
   const maxAbs = useMemo(() => Math.max(...weekRows.map(r => Math.abs(r.pnl)), 1), [weekRows]);
 
   // Group by year
@@ -249,10 +271,11 @@ function WeekGrid({ weekRows }) {
               const bg = r.pnl > 0
                 ? `rgba(0, ${Math.round(130 + 125 * ratio)}, 60, ${0.25 + 0.75 * ratio})`
                 : `rgba(${Math.round(180 + 75 * ratio)}, 30, 30, ${0.25 + 0.75 * ratio})`;
-              const textColor = ratio > 0.4 ? '#fff' : (r.pnl > 0 ? '#005a1f' : '#7a0000');
+              const textColor = ratio > 0.4 ? '#fff' : (r.pnl > 0 ? 'var(--os-pos)' : 'var(--os-neg)');
               return (
-                <div key={i} className="pnl-week-cell" style={{ background: bg, color: textColor }}
-                  title={`Week of ${r.key}: ${fmt(r.pnl)} | ${r.trades} trades | ${r.wins}W/${r.losses}L`}>
+                <div key={i} className="pnl-week-cell" style={{ background: bg, color: textColor, cursor: 'pointer' }}
+                  title={`Week of ${r.key}: ${fmt(r.pnl)} | ${r.trades} trades | ${r.wins}W/${r.losses}L — click to zoom in`}
+                  onClick={() => onSelect(...weekRange(r.key))}>
                   <span className="pnl-week-label">{r.label}</span>
                   <span className="pnl-week-amount">{fmt(r.pnl, true)}</span>
                 </div>
@@ -263,7 +286,7 @@ function WeekGrid({ weekRows }) {
       ))}
       <div className="pnl-legend" style={{ marginTop: 10 }}>
         <span>Loss</span>
-        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','#e0e0e0','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
+        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','var(--os-border)','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
           <span key={i} style={{ display:'inline-block', width:14, height:14, background:c, borderRadius:3, verticalAlign:'middle' }} />
         ))}
         <span>Gain</span>
@@ -274,7 +297,7 @@ function WeekGrid({ weekRows }) {
 
 // ── yearly grid component ─────────────────────────────────────────────────────
 
-function YearGrid({ yearRows }) {
+function YearGrid({ yearRows, onSelect }) {
   const maxAbs = useMemo(() => Math.max(...yearRows.map(r => Math.abs(r.pnl)), 1), [yearRows]);
 
   return (
@@ -286,10 +309,11 @@ function YearGrid({ yearRows }) {
           const bg = r.pnl > 0
             ? `rgba(0, ${Math.round(130 + 125 * ratio)}, 60, ${0.25 + 0.75 * ratio})`
             : `rgba(${Math.round(180 + 75 * ratio)}, 30, 30, ${0.25 + 0.75 * ratio})`;
-          const textColor = ratio > 0.35 ? '#fff' : (r.pnl > 0 ? '#005a1f' : '#7a0000');
+          const textColor = ratio > 0.35 ? '#fff' : (r.pnl > 0 ? 'var(--os-pos)' : 'var(--os-neg)');
           return (
-            <div key={i} className="pnl-year-cell" style={{ background: bg, color: textColor }}
-              title={`${r.key}: ${fmt(r.pnl)} | ${r.trades} trades | ${r.wins}W/${r.losses}L`}>
+            <div key={i} className="pnl-year-cell" style={{ background: bg, color: textColor, cursor: 'pointer' }}
+              title={`${r.key}: ${fmt(r.pnl)} | ${r.trades} trades | ${r.wins}W/${r.losses}L — click to zoom in`}
+              onClick={() => onSelect(...yearRange(r.key))}>
               <span className="pnl-year-label">{r.key}</span>
               <span className="pnl-year-amount">{fmt(r.pnl, true)}</span>
               <span className="pnl-year-sub">{r.trades} trades · {r.wins}W / {r.losses}L</span>
@@ -299,7 +323,7 @@ function YearGrid({ yearRows }) {
       </div>
       <div className="pnl-legend" style={{ marginTop: 10 }}>
         <span>Loss</span>
-        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','#e0e0e0','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
+        {['rgba(200,30,30,0.9)','rgba(200,30,30,0.45)','var(--os-border)','rgba(0,180,60,0.45)','rgba(0,200,60,0.9)'].map((c, i) => (
           <span key={i} style={{ display:'inline-block', width:14, height:14, background:c, borderRadius:3, verticalAlign:'middle' }} />
         ))}
         <span>Gain</span>
@@ -312,7 +336,7 @@ function YearGrid({ yearRows }) {
 
 const VIEWS = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
 
-export default function PnLCalendar({ trades }) {
+export default function PnLCalendar({ trades, onPeriodSelect }) {
   // detect data range
   const dataRange = useMemo(() => {
     const dates = trades
@@ -331,6 +355,15 @@ export default function PnLCalendar({ trades }) {
   // sync pickers to data range once data arrives
   const effectiveStart = startDate || dataRange.min;
   const effectiveEnd   = endDate   || dataRange.max;
+
+  // ── single control point for "click a period → scope everything to it" ────
+  // Used by the Daily/Weekly/Monthly/Yearly grid cells (and available to the
+  // dashboard's own top date picker + row-range slider via onPeriodSelect).
+  const handlePeriodSelect = (start, end) => {
+    setStartDate(start);
+    setEndDate(end);
+    if (onPeriodSelect) onPeriodSelect(start, end);
+  };
 
   // ── aggregated data ─────────────────────────────────────────────────────────
   const byDay = useMemo(
@@ -366,7 +399,7 @@ export default function PnLCalendar({ trades }) {
     <div className="pnl-calendar-root">
       {/* ── header ── */}
       <div className="pnl-calendar-header">
-        <span className="pnl-title">📅 P&amp;L Calendar</span>
+        <span className="pnl-title"><CalendarIcon size={14} /> P&amp;L Calendar</span>
 
         {/* date pickers */}
         <div className="pnl-pickers">
@@ -406,7 +439,7 @@ export default function PnLCalendar({ trades }) {
       {/* ── no data state ── */}
       {noData && (
         <div className="pnl-empty">
-          <span>📊</span>
+          <LogoIcon size={30} />
           <p>No trading data loaded yet.</p>
           <p style={{ fontSize: 13 }}>Enter your credentials above and click <strong>Fetch Data</strong>.</p>
         </div>
@@ -414,7 +447,7 @@ export default function PnLCalendar({ trades }) {
 
       {!noData && noFiltered && (
         <div className="pnl-empty">
-          <span>🔍</span>
+          <SearchIcon size={28} />
           <p>No trades with P&amp;L in the selected date range.</p>
         </div>
       )}
@@ -443,23 +476,23 @@ export default function PnLCalendar({ trades }) {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartRows} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}
               barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--os-border)" />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 10, fill: '#888' }}
+                tick={{ fontSize: 10, fill: 'var(--os-text-3)' }}
                 interval={xInterval}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={v => fmt(v, true)}
-                tick={{ fontSize: 10, fill: '#888' }}
+                tick={{ fontSize: 10, fill: 'var(--os-text-3)' }}
                 axisLine={false}
                 tickLine={false}
                 width={54}
               />
-              <Tooltip content={<BarTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-              <ReferenceLine y={0} stroke="#ccc" strokeWidth={1} />
+              <Tooltip content={<BarTooltip />} cursor={{ fill: 'rgba(128,128,128,0.12)' }} />
+              <ReferenceLine y={0} stroke="var(--os-border)" strokeWidth={1} />
               <Bar dataKey="pnl" radius={[3, 3, 0, 0]} maxBarSize={40}>
                 {chartRows.map((r, i) => (
                   <Cell key={i} fill={r.pnl >= 0 ? '#00c853' : '#ff1744'} fillOpacity={0.85} />
@@ -471,13 +504,13 @@ export default function PnLCalendar({ trades }) {
 
         {/* ── grids below bar chart ── */}
         {view === 'Monthly' && monthRows.length > 0 && (
-          <MonthGrid monthRows={monthRows} />
+          <MonthGrid monthRows={monthRows} onSelect={handlePeriodSelect} />
         )}
         {view === 'Weekly' && weekRows.length > 0 && (
-          <WeekGrid weekRows={weekRows} />
+          <WeekGrid weekRows={weekRows} onSelect={handlePeriodSelect} />
         )}
         {view === 'Yearly' && yearRows.length > 0 && (
-          <YearGrid yearRows={yearRows} />
+          <YearGrid yearRows={yearRows} onSelect={handlePeriodSelect} />
         )}
 
         {/* ── daily heatmap (only in Daily view) ── */}
@@ -496,6 +529,7 @@ export default function PnLCalendar({ trades }) {
                     style: { fill: heatColor(value, maxPnl), cursor: 'pointer' },
                     onMouseEnter: e => setTooltip({ x: e.clientX, y: e.clientY, data: value }),
                     onMouseMove:  e => setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY } : t),
+                    onClick: () => handlePeriodSelect(...dayRange(value.date)),
                   });
                 }}
                 showWeekdayLabels
@@ -505,7 +539,7 @@ export default function PnLCalendar({ trades }) {
             {/* legend */}
             <div className="pnl-legend">
               <span>Loss</span>
-              {['#b30000','#e06060','#e0e0e0','#60c060','#006600'].map((c, i) => (
+              {['#b30000','#e06060','var(--os-border)','#60c060','#006600'].map((c, i) => (
                 <span key={i} style={{
                   display: 'inline-block', width: 13, height: 13,
                   background: c, borderRadius: 3, verticalAlign: 'middle'

@@ -1,13 +1,78 @@
-import React, { useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useMemo, useRef} from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
-import { Card, CardContent, CardHeader, Select, MenuItem, TextField, Button, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from '@mui/material';
+import { Card, CardContent, CardHeader, Select, MenuItem, TextField, Button, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress } from '@mui/material';
 import { LineChart,ScatterChart, Scatter, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import axios from 'axios';
+import { API_BASE } from './apiBase';
 import TradingNotes from './tradingnotes'; // Import the TradingNotes component
 import StockPlot from './StockPlot';
-import Chatbot from './components/chatbot/Chatbot';
 import PnLCalendar from './components/PnLCalendar';
-const theme = createTheme();
+import ErrorBubble from './components/ErrorBubble';
+import { useAssistantContext } from './components/chatbot/assistantContext';
+import SettingsCenter from './components/settings/SettingsCenter';
+import { getSetting, useSettingsVersion } from './appSettings';
+import { LogoIcon, RefreshIcon, SunIcon, MoonIcon, MonitorIcon, GearIcon, ChartUpIcon, BulbIcon } from './components/icons';
+
+// Day/night theming (src/osTheme.js): one builder, two palettes. MUI
+// surfaces (Paper/Card/Table/TextField) flip automatically from the palette
+// mode; everything else reads the --os-* CSS variables in index.css.
+const buildTheme = (mode) => createTheme({
+  shape: { borderRadius: 12 },
+  typography: {
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    h4: { fontWeight: 800, letterSpacing: '-0.02em' },
+    button: { textTransform: 'none', fontWeight: 600 },
+  },
+  palette: {
+    mode,
+    ...(mode === 'dark' ? {
+      primary: { main: '#64b5f6' },
+      background: { default: 'transparent', paper: '#151b2c' },
+      divider: '#263048',
+      success: { main: '#4caf7d' }, warning: { main: '#e0a458' }, error: { main: '#ef6b6b' },
+    } : {}),
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+          border: '1px solid var(--os-border)',
+          boxShadow: 'var(--os-shadow-1)',
+        },
+      },
+    },
+    MuiCard: { styleOverrides: { root: { border: '1px solid var(--os-border)', boxShadow: 'var(--os-shadow-1)' } } },
+    MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { borderRadius: 10 } } },
+    MuiTextField: { defaultProps: { size: 'small' } },
+    MuiTableCell: { styleOverrides: { root: { borderColor: 'var(--os-border)' } } },
+  },
+});
+
+// Consistent money formatting across the dashboard — thousands separators
+// and "-$1,234.00" sign placement instead of "$-1234.00".
+// Honors Settings → Preferences: P/L decimal places + compact thousands.
+function fmtMoney(n) {
+  if (n === null || n === undefined || isNaN(n)) return '$0.00';
+  const dpRaw = parseInt(localStorage.getItem('pl_decimals'), 10);
+  const dp = Number.isFinite(dpRaw) ? Math.min(2, Math.max(0, dpRaw)) : 2;
+  if (localStorage.getItem('compact_numbers') === 'true' && Math.abs(n) >= 1000) {
+    return (n < 0 ? '-$' : '$') + (Math.abs(n) / 1000).toFixed(1) + 'k';
+  }
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  return (n < 0 ? '-$' : '$') + abs;
+}
+
+// Compact variant for chart axis ticks — fixed-width labels ("-$10k") don't
+// have room for fmtMoney's full "-$10,000.00", and Recharts right-anchors
+// axis text, so an overflowing label clips off its own leading characters
+// (a "-$10,000.00" tick was rendering as "0,000.00" before this existed).
+function fmtCompact(n) {
+  if (n === null || n === undefined || isNaN(n)) return '$0';
+  const abs = Math.abs(n);
+  const scaled = abs >= 1000 ? (abs / 1000).toFixed(1) + 'k' : abs.toFixed(0);
+  return (n < 0 ? '-$' : '$') + scaled;
+}
 
 // eslint-disable-next-line no-unused-vars
 const parseCSV = (csvString) => {
@@ -105,6 +170,8 @@ const calculateProfitLoss = (trades) => {
         pl: 0,
         openDate: null,
         closeDate: null,
+        openDateTime: null,
+        closeDateTime: null,
         expiryDate: null,
         sign: 1,
         revenue: 0,
@@ -132,6 +199,7 @@ const calculateProfitLoss = (trades) => {
       profitLoss[key].buyAmount += totalStrike;
       if (!profitLoss[key].openDate || date < profitLoss[key].openDate) {
         profitLoss[key].openDate = date;
+        profitLoss[key].openDateTime = trade["Activity DateTime"] || null;
       }
     } else if (trade["Trans Code"] === "STC") {
       profitLoss[key].sellQuantity += quantity;
@@ -139,6 +207,7 @@ const calculateProfitLoss = (trades) => {
       profitLoss[key].revenue = profitLoss[key].sellAmount; // Update revenue for STC trades
       if (!profitLoss[key].closeDate || date > profitLoss[key].closeDate) {
         profitLoss[key].closeDate = date;
+        profitLoss[key].closeDateTime = trade["Activity DateTime"] || null;
       }
       // Calculate gainRatio
       if (profitLoss[key].buyAmount > 0) {
@@ -190,13 +259,21 @@ const calculateProfitLoss = (trades) => {
 
 // for searching any text, use the browser search 
 
-const OptionsTradingDashboard = ({ onReplayTrade, onDatesChange }) => {
+const OptionsTradingDashboard = ({ onReplayTrade, onDatesChange, chatOpen, registry, osTheme }) => {
   const dashboardRef = useRef(null);
   const [csvData, setCsvData] = useState([]);
   const [profitLossData, setProfitLossData] = useState([]);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [startDate, setStartDate] = useState('2023-01-01');
+  const [username, setUsername] = useState(() => localStorage.getItem('dash_user') || '');
+  const [password, setPassword] = useState(() => localStorage.getItem('dash_pass') || '');
+  const [showSetup, setShowSetup] = useState(false); // Settings Center modal
+  const mode = osTheme?.mode || 'light';
+  const muiTheme = useMemo(() => buildTheme(mode), [mode]);
+  // Settings → Preferences → default lookback: "last N days" from today
+  // instead of the fixed 2023-01-01 start (0 keeps the old behavior).
+  const [startDate, setStartDate] = useState(() => {
+    const lb = parseInt(localStorage.getItem('default_lookback_days'), 10) || 0;
+    return lb > 0 ? new Date(Date.now() - lb * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : '2023-01-01';
+  });
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [instrumentSort, setInstrumentSort] = useState('none');
   const [revenueSort, setRevenueSort] = useState('none');
@@ -213,10 +290,30 @@ const OptionsTradingDashboard = ({ onReplayTrade, onDatesChange }) => {
   const [endStockPlotDate, setEndStockPlotDate] = useState('');
   const [datespacingInput, setDatespacingInput] = useState('10');
   const [displayPlot, setDisplayPlot] = useState(false);
+  const [topLimit, setTopLimit] = useState(() =>
+    parseInt(localStorage.getItem('dash_top_limit'), 10) || 100); // how many top win/loss rows the tables list
+  useSettingsVersion(); // re-render when Preferences change (number formats)
   const [gainRatioData, setGainRatioData] = useState([]);
-  const [isOpen, setIsOpen] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
+  const [showRowRange, setShowRowRange] = useState(false); // row-index slicer is a power-user tool, collapsed by default
+
+  // ── preferences-driven behaviors (Settings → Preferences) ──────────────────
+  const autoLoadRef = useRef(false);
+  useEffect(() => {
+    if (getSetting('remember_filters')) localStorage.setItem('dash_top_limit', String(topLimit));
+  }, [topLimit]);
+
+  // Auto-load trades on launch when a login is saved — the backend serves the
+  // cached order history, so this is usually instant.
+  useEffect(() => {
+    if (autoLoadRef.current) return;
+    autoLoadRef.current = true;
+    if (getSetting('auto_load_trades') && username && password && csvData.length === 0) {
+      handleFetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 const parseCSV = (csvString) => {
   const lines = csvString.split('\n');
@@ -239,7 +336,7 @@ const parseCSV = (csvString) => {
     setIsFetching(true);
     setFetchError('');
     try {
-      const response = await axios.post('http://localhost:5000/api/fetch-data', {
+      const response = await axios.post(`${API_BASE}/api/fetch-data`, {
         username,
         password,
         startDate,
@@ -256,6 +353,7 @@ const parseCSV = (csvString) => {
         parsedData = JSON.parse(cleanedData);
       } catch (error) {
         console.error('Failed to parse JSON string:', error);
+        setFetchError('The server returned data that could not be parsed. Check the backend logs.');
         return;
       }
     } else {
@@ -267,8 +365,15 @@ const parseCSV = (csvString) => {
       setCsvData(parsedData);
       setSliceStart(0);
       setSliceEnd(parsedData.length);
+      // Settings → Preferences → remember login: persist only after a
+      // successful fetch so bad credentials never get cached.
+      if (getSetting('rh_persist')) {
+        localStorage.setItem('dash_user', username);
+        localStorage.setItem('dash_pass', password);
+      }
     } else {
       console.error('Expected an array but got:', typeof parsedData);
+      setFetchError('The server returned an unexpected response shape — expected a list of trades.');
     }
   
     
@@ -277,6 +382,25 @@ const parseCSV = (csvString) => {
       setFetchError(error?.response?.data?.error || error.message || 'Fetch failed');
     } finally {
       setIsFetching(false);
+    }
+  };
+
+  // ── single control point: click a period in the P&L grid → scope the whole
+  // dashboard to it. Syncs the top Start/End Date pickers and the row-range
+  // slider, so every derived view (stats, charts, All Trades table) re-renders
+  // against just that period — no refetch needed, csvData already covers it.
+  const handlePeriodSelect = (start, end) => {
+    setStartDate(start);
+    setEndDate(end);
+
+    const matches = [];
+    csvData.forEach((row, i) => {
+      const d = row['Activity Date'];
+      if (d && d >= start && d <= end) matches.push(i);
+    });
+    if (matches.length) {
+      setSliceStart(Math.min(...matches));
+      setSliceEnd(Math.max(...matches) + 1);
     }
   };
 
@@ -308,7 +432,19 @@ const parseCSV = (csvString) => {
   useEffect(() => {
     if (csvData.length > 0) {
       const slicedData = csvData.slice(sliceStart, sliceEnd);
-      const plData = calculateProfitLoss(slicedData);
+
+      // P&L must be netted (BTO vs STC/OEXP) across the FULL trade history
+      // first, then filtered down to the selected window by position — never
+      // by pre-slicing rows. A position whose open and close legs straddle
+      // the window boundary (e.g. opened the last day of the month, closed
+      // two days later) would otherwise have its closing leg silently
+      // excluded, scoring a real profitable trade as a full loss.
+      const rangeStartDate = slicedData[0] ? new Date(slicedData[0]["Activity Date"]) : null;
+      const rangeEndDate   = slicedData[slicedData.length - 1] ? new Date(slicedData[slicedData.length - 1]["Activity Date"]) : null;
+      const allPlData = calculateProfitLoss(csvData);
+      const plData = (rangeStartDate && rangeEndDate)
+        ? allPlData.filter(p => p.openDate && p.openDate >= rangeStartDate && p.openDate <= rangeEndDate)
+        : allPlData;
       setProfitLossData(plData);
       const gainRatioDataDates = plData.filter(trade => trade.gainRatio !== null)
         .reduce((acc, trade) => {
@@ -433,15 +569,17 @@ const parseCSV = (csvString) => {
   });
   const zerofilteredTransactionData = transactionData.filter(transaction => transaction.amount !== 0);
 
-  const topProfitableTrades = profitLossData
+  // Full sorted win/loss lists — the tables slice these to `topLimit` rows
+  // (scrollable); the assistant context keeps its own concise top-5 slice.
+  const sortedProfitableTrades = profitLossData
     .filter(trade => trade.pl > 0)
-    .sort((a, b) => b.pl - a.pl)
-    .slice(0, 5);
-
-  const topLossMakingTrades = profitLossData
+    .sort((a, b) => b.pl - a.pl);
+  const sortedLossMakingTrades = profitLossData
     .filter(trade => trade.pl < 0)
-    .sort((a, b) => a.pl - b.pl)
-    .slice(0, 5);
+    .sort((a, b) => a.pl - b.pl);
+
+  const topProfitableTrades = sortedProfitableTrades.slice(0, topLimit);
+  const topLossMakingTrades = sortedLossMakingTrades.slice(0, topLimit);
 
   const plByType = profitLossData.reduce((acc, trade) => {
     if (!acc[trade.type]) acc[trade.type] = 0;
@@ -524,11 +662,6 @@ const scatterData = gainRatioData.flatMap(trade => trade.trades.map((t, index) =
 })));
 console.log(scatterData)
 
-
-const handleOpenChange = (isOpen) => {
-    setIsOpen(isOpen);
-  };
-
 // eslint-disable-next-line no-unused-vars
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload) return null;
@@ -553,147 +686,255 @@ return (
   );
 };
 
+  // ── structured context for the chat assistant ──────────────────────────────
+  // Built fresh on every call (not memoized) so it always reflects whatever's
+  // currently on screen — the row range, date filters, and computed P&L. A
+  // screenshot alone makes the assistant guess numbers from pixels; this gives
+  // it the real, exact figures to reason about instead — including the exact
+  // buy/sell timestamps, contract quantities, and premiums that aren't
+  // legible from a chart screenshot at all.
+  const ALL_TRADES_CONTEXT_CAP = 300; // keeps the JSON payload bounded for large date ranges
+
+  const getChatContext = () => {    const heldHours = (t) => {
+      if (!t.openDateTime || !t.closeDateTime) return null;
+      const ms = new Date(t.closeDateTime) - new Date(t.openDateTime);
+      return ms > 0 ? +(ms / 3600000).toFixed(1) : null;
+    };
+
+    const tradeSummary = (t) => ({
+      instrument: t.instrument, type: t.type, strike: t.strike, expiry: t.expiry,
+      buyQuantity: t.buyQuantity, sellQuantity: t.sellQuantity,
+      premiumPaid: Math.round(t.buyAmount), premiumReceived: Math.round(t.sellAmount),
+      pl: Math.round(t.pl),
+      gainRatio: t.gainRatio != null ? +t.gainRatio.toFixed(2) : null,
+      // Full ISO UTC timestamp when available (exact buy/sell time), falling
+      // back to date-only for legs where the raw timestamp wasn't captured.
+      openDateTime: t.openDateTime || (t.openDate ? new Date(t.openDate).toISOString().slice(0, 10) : null),
+      closeDateTime: t.closeDateTime || (t.closeDate ? new Date(t.closeDate).toISOString().slice(0, 10) : null),
+      heldHours: heldHours(t),
+    });
+
+    const chronological = [...profitLossData].sort((a, b) => {
+      const av = a.openDateTime || a.openDate || '';
+      const bv = b.openDateTime || b.openDate || '';
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    });
+    const truncated = chronological.length > ALL_TRADES_CONTEXT_CAP;
+    // Keep the most recent trades when truncating — usually what "in this
+    // period" questions care about most once a range is already narrowed.
+    const allTrades = (truncated ? chronological.slice(-ALL_TRADES_CONTEXT_CAP) : chronological).map(tradeSummary);
+
+    return {
+      dateRangeFilter: { start: startDate, end: endDate },
+      rowRange: { start: sliceStart, end: sliceEnd, totalRowsAvailable: csvData.length },
+      note: "All amounts are USD. Standard US equity option contracts represent 100 shares each "
+          + "(Amount ≈ Price × Quantity × 100) — buyQuantity/sellQuantity below are contract counts, "
+          + "not shares. openDateTime/closeDateTime are exact timestamps (UTC) when available; "
+          + "heldHours is the exact time between them.",
+      summary: {
+        totalPL: Math.round(aggregatedPL),
+        totalProfit: Math.round(totalProfit),
+        totalLoss: Math.round(totalLoss),
+        totalTrades: profitLossData.length,
+        winRatePct: profitLossData.length ? +winRate.toFixed(1) : null,
+      },
+      plByInstrument: sortedPlByInstrument
+        .slice().sort((a, b) => Math.abs(b.pl) - Math.abs(a.pl)).slice(0, 15)
+        .map(i => ({ instrument: i.instrument, pl: Math.round(i.pl) })),
+      plByOptionType: Object.entries(plByType).map(([type, v]) => ({
+        type, pl: v.sign === 1 ? Math.round(v.pl) : -Math.round(v.pl),
+      })),
+      topProfitableTrades: sortedProfitableTrades.slice(0, 5).map(tradeSummary),
+      topLossMakingTrades: sortedLossMakingTrades.slice(0, 5).map(tradeSummary),
+      // The complete trade list for the current view (not just the top 5
+      // win/loss highlights above) — capped and clearly labeled if truncated,
+      // so the assistant never mistakes a partial list for the full ledger.
+      allTrades,
+      allTradesTruncated: truncated,
+      allTradesTotalCount: profitLossData.length,
+    };
+  };
+
+  // The assistant reads THIS page's context + screenshot whenever the
+  // dashboard is the visible page (see files/assistant-history-design.md).
+  useAssistantContext(registry, {
+    id: 'dashboard',
+    title: 'Dashboard',
+    getContext: getChatContext,
+    targetRef: dashboardRef,
+  });
 
   return (
-    <ThemeProvider theme={theme}>
-      <div ref={dashboardRef} style={{ padding: '1rem 1.5rem' }} className={`analysis-space ${isOpen ? 'open' : ''}`} >
-        <Typography variant="h4" gutterBottom>Options Trading Analysis Dashboard</Typography>
-
-        <div style={{ marginBottom: '0.5rem' }}>
-          <TextField
-            type="text"
-            label="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{ marginRight: '1rem' }}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ marginRight: '1rem' }}
-          />
-          <TextField
-            label="Start Date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            style={{ marginRight: '1rem' }}
-          />
-          <TextField
-            label="End Date"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-            style={{ marginRight: '1rem' }}
-          />
+    <ThemeProvider theme={muiTheme}>
+      <div ref={dashboardRef} style={{ padding: '1rem 1.5rem', background: 'var(--os-bg)', minHeight: '100vh' }} className={`analysis-space ${chatOpen ? 'open' : ''}`} >
+        {/* ── sticky translucent top bar (2026 pattern: glass only on
+               overlays/sticky chrome; solid surfaces everywhere else) ── */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 900, margin: '-1rem -1.5rem 1rem',
+          padding: '10px 1.5rem', display: 'flex', alignItems: 'center', gap: 12,
+          background: 'var(--os-surface-glass)', backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)', borderBottom: '1px solid var(--os-border)',
+          transition: 'background .25s ease, border-color .25s ease',
+        }}>
+          <Typography variant="h4" style={{ fontSize: 19, fontWeight: 800, color: 'var(--os-text)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <LogoIcon size={20} /> OptionScope
+          </Typography>
+          <span style={{
+            fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 999,
+            background: profitLossData.length ? 'rgba(76,175,125,.14)' : 'rgba(224,164,88,.16)',
+            color: profitLossData.length ? '#4caf7d' : '#e0a458',
+            whiteSpace: 'nowrap',
+          }}>
+            {profitLossData.length ? `Connected · ${profitLossData.length} trades` : 'Not connected'}
+          </span>
+          <div style={{ flex: 1 }} />
+          <TextField label="Start" type="date" size="small" value={startDate}
+                     onChange={(e) => setStartDate(e.target.value)} InputLabelProps={{ shrink: true }}
+                     style={{ width: 150 }} />
+          <TextField label="End" type="date" size="small" value={endDate}
+                     onChange={(e) => setEndDate(e.target.value)} InputLabelProps={{ shrink: true }}
+                     style={{ width: 150 }} />
           <Button variant="contained" color="primary" onClick={handleFetchData}
-            disabled={isFetching}>
+                  disabled={isFetching} className="os-btn-lift">
             {isFetching ? 'Fetching…' : 'Fetch Data'}
           </Button>
-          {fetchError && (
-            <span style={{ color: '#e53935', fontSize: 12, marginLeft: 8 }}>
-              {fetchError}
-            </span>
-          )}
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => {
+          <Button variant="outlined" color="inherit" size="small" onClick={() => {
               const clearCache = async () => {
                 try {
-                  const response = await axios.post('http://localhost:5000/api/clear-cache', {
-                    username,
-                    password,
-                    startDate,
-                    endDate,
-                  });
-                  console.log('Cache cleared and data refetched:', response.data);
-                  // Update your state to reflect the new data
+                  await axios.post(`${API_BASE}/api/clear-cache`, { username, password, startDate, endDate });
                   handleFetchData();
                 } catch (error) {
                   console.error('Error clearing cache and refetching data:', error);
+                  setFetchError(error?.response?.data?.error || error.message || 'Failed to clear cache');
                 }
               };
               clearCache();
             }}
-          >
-            Clear Cache
+            title="Delete cached order history and re-fetch from Robinhood"
+            style={{ borderColor: '#e3e8f0', color: '#98a2b3', minWidth: 0, padding: '5px 10px' }}>
+            <RefreshIcon size={16} />
+          </Button>
+          <Button variant="outlined" color="inherit" onClick={() => osTheme?.toggle()}
+                  title={osTheme?.saved === 'auto'
+                    ? 'Theme: Auto (night 19:00–07:00) — click for Day'
+                    : osTheme?.saved === 'dark'
+                      ? 'Theme: Night — click for Auto'
+                      : 'Theme: Day — click for Night'}
+                  aria-label="Cycle day/night/auto theme"
+                  style={{ borderColor: 'var(--os-border)', color: 'var(--os-text-2)', minWidth: 0, padding: '5px 11px' }}>
+            {osTheme?.saved === 'auto'
+              ? <MonitorIcon size={16} />
+              : mode === 'dark' ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+          </Button>
+          <Button variant="outlined" color="inherit" onClick={() => setShowSetup(true)} className="os-btn-lift"
+                  title="Credentials, AI keys & preferences"
+                  style={{ borderColor: 'var(--os-border)', color: 'var(--os-text-2)', fontWeight: 700 }}>
+            <GearIcon size={15} /> Setup
           </Button>
         </div>
 
+        <SettingsCenter
+          open={showSetup}
+          onClose={() => setShowSetup(false)}
+          osTheme={osTheme}
+          credentials={{ username, password, startDate, endDate }}
+          onSaveCredentials={({ username: u, password: p, startDate: s, endDate: e }) => {
+            setUsername(u); setPassword(p);
+            if (s) setStartDate(s);
+            if (e) setEndDate(e);
+            localStorage.setItem('dash_user', u || '');
+            localStorage.setItem('dash_pass', p || '');
+          }}
+        />
 
 
-
-        {csvData.length > 0 ? (
+        {isFetching ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem 0' }}>
+            <CircularProgress size={20} />
+            <Typography>
+              Fetching options history from Robinhood — large accounts (thousands of orders)
+              can take a minute or more on the first fetch…
+            </Typography>
+          </div>
+        ) : csvData.length > 0 ? (
           <>
-            <div style={{ marginBottom: '0.5rem' }}>
-              <Typography>Start Row: {sliceStart}</Typography>
-              <input
-                type="range"
-                min="0"
-                max={csvData.length - 1}
-                value={sliceStart}
-                onChange={(e) => {
-                  const newStart = parseInt(e.target.value);
-                  setSliceStart(newStart);
-                  if (newStart >= sliceEnd) {
-                    setSliceEnd(newStart + 1);
-                  }
+            <div style={{ marginBottom: '0.75rem' }}>
+              <button
+                onClick={() => setShowRowRange(s => !s)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                  color: '#5c6b8a', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4,
                 }}
-              />
-              <Typography>End Row: {sliceEnd}</Typography>
-              <input
-                type="range"
-                min={sliceStart + 1}
-                max={csvData.length}
-                value={sliceEnd}
-                onChange={(e) => setSliceEnd(parseInt(e.target.value))}
-              />
-              <Typography>Showing date range: {csvData[sliceStart] && csvData[sliceStart]["Activity Date"]} to {csvData[sliceEnd - 1] && csvData[sliceEnd - 1]["Activity Date"]}</Typography>
-              <Typography>Showing rows {sliceStart} to {sliceEnd} of {csvData.length}</Typography>
+              >
+                {showRowRange ? '▾' : '▸'} Advanced: filter by row range
+                <span style={{ color: '#9aa5bd', fontWeight: 400 }}>
+                  ({sliceStart}–{sliceEnd} of {csvData.length}{(sliceStart > 0 || sliceEnd < csvData.length) ? ' · narrowed' : ''})
+                </span>
+              </button>
+
+              {showRowRange && (
+                <div style={{
+                  marginTop: 8, padding: '0.75rem 1rem', background: '#fff',
+                  border: '1px solid #e2e6ee', borderRadius: 8, maxWidth: 480,
+                }}>
+                  <Typography variant="caption" style={{ color: '#888' }}>Start Row: {sliceStart}</Typography>
+                  <input
+                    style={{ width: '100%' }}
+                    type="range"
+                    min="0"
+                    max={csvData.length - 1}
+                    value={sliceStart}
+                    onChange={(e) => {
+                      const newStart = parseInt(e.target.value);
+                      setSliceStart(newStart);
+                      if (newStart >= sliceEnd) {
+                        setSliceEnd(newStart + 1);
+                      }
+                    }}
+                  />
+                  <Typography variant="caption" style={{ color: '#888' }}>End Row: {sliceEnd}</Typography>
+                  <input
+                    style={{ width: '100%' }}
+                    type="range"
+                    min={sliceStart + 1}
+                    max={csvData.length}
+                    value={sliceEnd}
+                    onChange={(e) => setSliceEnd(parseInt(e.target.value))}
+                  />
+                  <Typography variant="caption" style={{ display: 'block', color: '#888', marginTop: 4 }}>
+                    {csvData[sliceStart] && csvData[sliceStart]["Activity Date"]} → {csvData[sliceEnd - 1] && csvData[sliceEnd - 1]["Activity Date"]}
+                  </Typography>
+                  {(sliceStart > 0 || sliceEnd < csvData.length) && (
+                    <Button size="small" onClick={() => { setSliceStart(0); setSliceEnd(csvData.length); }} style={{ marginTop: 4 }}>
+                      Reset to full range
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <Card>
-                <CardHeader title="Total Profit/Loss" />
-                <CardContent>
-                  <Typography variant="h5" style={{ color: aggregatedPL >= 0 ? 'green' : 'red' }}>
-                    ${aggregatedPL.toFixed(2)}
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader title="Total Profit" />
-                <CardContent>
-                  <Typography variant="h5" style={{ color: 'green' }}>
-                    ${totalProfit.toFixed(2)}
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader title="Total Loss" />
-                <CardContent>
-                  <Typography variant="h5" style={{ color: 'red' }}>
-                    ${totalLoss.toFixed(2)}
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader title="Total Trades" />
-                <CardContent>
-                  <Typography variant="h5">{profitLossData.length}</Typography>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader title="Win Rate" />
-                <CardContent>
-                  <Typography variant="h5">{winRate.toFixed(2)}%</Typography>
-                </CardContent>
-              </Card>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+              {[
+                { label: 'Total Profit/Loss', value: fmtMoney(aggregatedPL), color: aggregatedPL >= 0 ? '#00a844' : '#e53935', accent: aggregatedPL >= 0 ? '#00a844' : '#e53935' },
+                { label: 'Total Profit',      value: fmtMoney(totalProfit), color: '#00a844', accent: '#00a844' },
+                { label: 'Total Loss',        value: fmtMoney(-totalLoss),  color: '#e53935', accent: '#e53935' },
+                { label: 'Total Trades',      value: profitLossData.length, color: 'var(--os-text)', accent: '#90a4ae' },
+                { label: 'Win Rate',          value: `${winRate.toFixed(2)}%`, color: winRate >= 50 ? '#00a844' : '#e53935', accent: winRate >= 50 ? '#00a844' : '#e53935' },
+              ].map(stat => (
+                <Card key={stat.label} elevation={0} style={{
+                  borderRadius: 10, border: '1px solid var(--os-border)',
+                  borderLeft: `4px solid ${stat.accent}`,
+                }}>
+                  <CardContent style={{ padding: '0.85rem 1.1rem' }}>
+                    <Typography variant="caption" style={{ color: 'var(--os-text-3)', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600 }}>
+                      {stat.label}
+                    </Typography>
+                    <Typography variant="h5" style={{ color: stat.color, fontWeight: 700, marginTop: 2 }}>
+                      {stat.value}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1fr', gap: '0.5rem' }}>
@@ -709,16 +950,23 @@ return (
                     <MenuItem value="desc">Descending</MenuItem>
                     <MenuItem value="none">None</MenuItem>
                   </Select>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={instrumentSort === 'asc' ? sortedPlByInstrument.sort((a, b) => a.pl - b.pl) :
                       instrumentSort === 'desc' ? sortedPlByInstrument.sort((a, b) => b.pl - a.pl) :
-                      sortedPlByInstrument}>
+                      sortedPlByInstrument}
+                      margin={{ bottom: 30, left: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="instrument" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="pl" fill="#8884d8" />
+                      <XAxis dataKey="instrument" angle={-45} textAnchor="end" interval={0} height={50}
+                        tick={{ fontSize: 10 }} />
+                      <YAxis tickFormatter={v => fmtCompact(v)} width={68} />
+                      <Tooltip formatter={v => fmtMoney(v)} />
+                      <Bar dataKey="pl" name="P&L">
+                        {(instrumentSort === 'asc' ? sortedPlByInstrument.sort((a, b) => a.pl - b.pl) :
+                          instrumentSort === 'desc' ? sortedPlByInstrument.sort((a, b) => b.pl - a.pl) :
+                          sortedPlByInstrument).map((entry, i) => (
+                          <Cell key={i} fill={entry.pl >= 0 ? '#00c853' : '#e53935'} fillOpacity={0.85} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -727,23 +975,24 @@ return (
               <Card>
                 <CardHeader title="Profit/Loss by Option Type" />
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
                       <Pie
                         data={Object.entries(plByType).map(([type, pl]) => ({ type, pl: pl.pl, sign: pl.sign }))}
                         dataKey="pl"
                         nameKey="type"
                         cx="50%"
-                        cy="45%"
-                        outerRadius={70}
+                        cy="50%"
+                        outerRadius={60}
                         fill="#8884d8"
-                        label={(entry) => `${entry.type}: ${entry.sign === 1 ? '+' : '-'}${Math.abs(entry.pl)}`}
+                        labelLine={{ stroke: '#bbb', strokeWidth: 1 }}
+                        label={(entry) => `${entry.type}: ${fmtMoney(entry.sign === 1 ? entry.pl : -entry.pl)}`}
                       >
                         {Object.entries(plByType).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry[0] === 'Call' | entry[0] === 'call' ? '#8884d8' : '#82ca9d'} />
+                          <Cell key={`cell-${index}`} fill={entry[0].toLowerCase() === 'call' ? '#8884d8' : '#82ca9d'} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(v, n, p) => [fmtMoney(p.payload.sign === 1 ? p.payload.pl : -p.payload.pl), p.payload.type]} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -763,14 +1012,16 @@ return (
                   <MenuItem value="desc">Descending</MenuItem>
                   <MenuItem value="none">None</MenuItem>
                 </Select>
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={revenueSort === 'asc' ? sortedPlByRevenue.sort((a, b) => a.revenue - b.revenue) :
                     revenueSort === 'desc' ? sortedPlByRevenue.sort((a, b) => b.revenue - a.revenue) :
-                    sortedPlByRevenue}>
+                    sortedPlByRevenue}
+                    margin={{ bottom: 30, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="instrument" />
-                    <YAxis />
-                    <Tooltip />
+                    <XAxis dataKey="instrument" angle={-45} textAnchor="end" interval={0} height={50}
+                      tick={{ fontSize: 10 }} />
+                    <YAxis tickFormatter={v => fmtCompact(v)} width={68} />
+                    <Tooltip formatter={v => fmtMoney(v)} />
                     <Legend />
                     <Bar dataKey="revenue" fill="#8884d8" />
                   </BarChart>
@@ -803,7 +1054,7 @@ return (
             {onReplayTrade && (
               <p style={{ fontSize: 12, color: '#1976d2', margin: '0 0 8px',
                          background: '#e3f2fd', padding: '6px 10px', borderRadius: 6 }}>
-                💡 Click any dot to open Trade Replay for that ticker
+                <BulbIcon size={13} /> Click any dot to open Trade Replay for that ticker
               </p>
             )}
             <ResponsiveContainer width="100%" height={200}>
@@ -886,10 +1137,19 @@ return (
                 variant="contained"
                 color="primary"
                 onClick={() => {
-                  if (selectedTicker && startStockPlotDate && endStockPlotDate) {
-                    // Ensure the plot is displayed
-                    setDisplayPlot(true);
+                  if (!selectedTicker) return;
+                  // Dates default to a window around the most recent loaded
+                  // transaction (or today) — clicking a bar in the P/L chart
+                  // above still refines them to that bar's date.
+                  if (!startStockPlotDate || !endStockPlotDate) {
+                    const ds = parseInt(datespacingInput) || 10;
+                    const raw = csvData.length ? csvData[csvData.length - 1]["Activity Date"] : null;
+                    let base = raw ? new Date(raw) : new Date();
+                    if (isNaN(base.getTime())) base = new Date();
+                    setStartStockPlotDate(new Date(base.getTime() - ds * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                    setEndStockPlotDate(new Date(base.getTime() + ds * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
                   }
+                  setDisplayPlot(true);
                 }}
               >
                 Display Plot
@@ -909,66 +1169,90 @@ return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
             {topProfitableTrades.length > 0 && (
               <Card style={{ marginTop: '0.5rem' }}>
-                <CardHeader title="Top Profitable Trades" />
+                <CardHeader
+                  title="Top Profitable Trades"
+                  action={
+                    <TextField
+                      size="small" variant="outlined" type="number" label="Limit"
+                      value={topLimit} min={1}
+                      onChange={(e) => setTopLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      style={{ width: 90, marginTop: -6 }} inputProps={{ style: { fontSize: 13 } }}
+                    />
+                  }
+                />
                 <CardContent>
-                  <table style={{ width: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th>Instrument</th>
-                        <th>Type</th>
-                        <th>Expiry</th>
-                        <th>Strike</th>
-                        <th>Profit/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topProfitableTrades.map((trade, index) => (
-                        <tr key={index}>
-                          <td>{trade.instrument}</td>
-                          <td>{trade.type}</td>
-                          <td>{trade.expiry}</td>
-                          <td>{trade.strike}</td>
-                          <td style={{ color: 'green' }}>${trade.pl.toFixed(2)}</td>
+                  <div style={{ overflowY: 'auto', maxHeight: 240 }}>
+                    <table style={{ width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th>Instrument</th>
+                          <th>Type</th>
+                          <th>Expiry</th>
+                          <th>Strike</th>
+                          <th>Profit/Loss</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {topProfitableTrades.map((trade, index) => (
+                          <tr key={index}>
+                            <td>{trade.instrument}</td>
+                            <td>{trade.type}</td>
+                            <td>{trade.expiry}</td>
+                            <td>{trade.strike}</td>
+                            <td style={{ color: 'green' }}>${trade.pl.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </CardContent>
               </Card>
             )}
 
             {topLossMakingTrades.length > 0 && (
               <Card style={{ marginTop: '0.5rem' }}>
-                <CardHeader title="Top Loss-Making Trades" />
+                <CardHeader
+                  title="Top Loss-Making Trades"
+                  action={
+                    <TextField
+                      size="small" variant="outlined" type="number" label="Limit"
+                      value={topLimit} min={1}
+                      onChange={(e) => setTopLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      style={{ width: 90, marginTop: -6 }} inputProps={{ style: { fontSize: 13 } }}
+                    />
+                  }
+                />
                 <CardContent>
-                  <table style={{ width: '100%' }}>
-                    <thead>
-                      <tr>
-                        <th>Instrument</th>
-                        <th>Type</th>
-                        <th>Expiry</th>
-                        <th>Strike</th>
-                        <th>Profit/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topLossMakingTrades.map((trade, index) => (
-                        <tr key={index}>
-                          <td>{trade.instrument}</td>
-                          <td>{trade.type}</td>
-                          <td>{trade.expiry}</td>
-                          <td>{trade.strike}</td>
-                          <td style={{ color: 'red' }}>${trade.pl.toFixed(2)}</td>
+                  <div style={{ overflowY: 'auto', maxHeight: 240 }}>
+                    <table style={{ width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th>Instrument</th>
+                          <th>Type</th>
+                          <th>Expiry</th>
+                          <th>Strike</th>
+                          <th>Profit/Loss</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {topLossMakingTrades.map((trade, index) => (
+                          <tr key={index}>
+                            <td>{trade.instrument}</td>
+                            <td>{trade.type}</td>
+                            <td>{trade.expiry}</td>
+                            <td>{trade.strike}</td>
+                            <td style={{ color: 'red' }}>${trade.pl.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </CardContent>
               </Card>
             )}
             </div>
 
-            <PnLCalendar trades={slicedData} />
+            <PnLCalendar trades={slicedData} onPeriodSelect={handlePeriodSelect} />
 
             <TradingNotes />
 
@@ -1024,10 +1308,27 @@ return (
             </Card>
           </>
         ) : (
-          <Typography>Please upload a CSV file to view the dashboard.</Typography>
+          /* Onboarding empty state (2026 pattern: empty states are quests,
+             not dead ends — one clear next action) */
+          <Paper elevation={0} style={{ padding: '48px 32px', textAlign: 'center', borderRadius: 16 }}>
+            <div style={{ marginBottom: 10, color: '#4c7daf' }}><ChartUpIcon size={44} /></div>
+            <Typography style={{ fontSize: 18, fontWeight: 700, color: 'var(--os-text)', marginBottom: 6 }}>
+              Bring your options history to life
+            </Typography>
+            <Typography style={{ fontSize: 13.5, color: 'var(--os-text-2)', maxWidth: 460, margin: '0 auto 22px', lineHeight: 1.6 }}>
+              1 · Add your Robinhood credentials in Setup &nbsp;·&nbsp;
+              2 · Pick a date range above &nbsp;·&nbsp; 3 · Hit <b>Fetch Data</b>.
+              Then ask the assistant anything about your trades — or open Spot Replay.
+            </Typography>
+            <Button variant="contained" color="primary" onClick={() => setShowSetup(true)} className="os-btn-lift">
+              <GearIcon size={15} /> Open Setup
+            </Button>
+            <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--os-text-3)' }}>
+              Credentials never leave this browser except to your locally-running backend.
+            </div>
+          </Paper>
         )}
       </div>
-      <Chatbot dashboardRef={dashboardRef} onOpenChange={handleOpenChange} />
     </ThemeProvider>
   );
 };

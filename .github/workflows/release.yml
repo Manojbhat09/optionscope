@@ -1,0 +1,100 @@
+name: Release
+
+# Two deliverables per version tag:
+#   1. source+prebuilt zip (clone-and-run with START_HERE scripts)
+#   2. native desktop installers per OS (files/desktop-app-design.md):
+#      Windows .exe/.zip · macOS .dmg (x64+arm64) · Linux .AppImage/.deb
+# Each desktop job freezes the Flask backend with PyInstaller, drops it into
+# desktop/sidecar as the Electron sidecar, and electron-builder wraps it.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  source-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - name: Install & build frontend
+        run: |
+          npm ci || npm install --no-audit --no-fund
+          npx react-scripts build
+      - name: Assemble portable folder
+        run: |
+          mkdir -p dist/optionscope/build
+          cp -r backend dist/optionscope/
+          rm -rf dist/optionscope/backend/data/chat_sessions.jsonl
+          cp START_HERE.sh START_HERE.bat README.md dist/optionscope/ 2>/dev/null || true
+          chmod +x dist/optionscope/START_HERE.sh
+          cp -r build/. dist/optionscope/build/
+          cd dist && zip -rq optionscope-${GITHUB_REF_NAME}-portable.zip optionscope
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-zip
+          path: dist/*.zip
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            py: python
+          - os: macos-latest
+            py: python3
+          - os: ubuntu-latest
+            py: python3
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+
+      - name: Build frontend
+        run: |
+          npm ci || npm install --no-audit --no-fund
+          npx react-scripts build
+
+      - name: Freeze backend sidecar (PyInstaller)
+        run: |
+          ${{ matrix.py }} -m pip install --upgrade pip
+          ${{ matrix.py }} -m pip install -r backend/requirements.txt pyinstaller
+          ${{ matrix.py }} -m PyInstaller backend/optionscope_backend.spec --noconfirm --distpath desktop/sidecar --workpath /tmp/pyi --specpath backend
+
+      - name: Build desktop installer (electron-builder)
+        working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: desktop/release/*
+
+  publish:
+    needs: [source-zip, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Attach everything to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: files/RELEASE_NOTES.md
+          files: |
+            artifacts/portable-zip/*
+            artifacts/desktop-windows-latest/*
+            artifacts/desktop-macos-latest/*
+            artifacts/desktop-ubuntu-latest/*
+          generate_release_notes: true

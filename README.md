@@ -1,14 +1,17 @@
 <div align="center">
   <img src="https://your-logo-url-here.png" alt="OptionScope Logo" width="200"/>
   <h1>🚀 OptionScope 📊</h1>
-  <h3>Robinhood Options Performance Dashboard</h3>
+  <h3>Robinhood options performance dashboard · trade replay · AI spot-analysis · built-in AI assistant</h3>
   <p><em>Elevate Your Options Trading with Data-Driven Insights</em></p>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![React](https://img.shields.io/badge/React-17.0.2-blue.svg)](https://reactjs.org/)
-  [![Flask](https://img.shields.io/badge/Flask-2.0.1-green.svg)](https://flask.palletsprojects.com/)
+  [![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
+  [![Flask](https://img.shields.io/badge/Flask-3-green.svg)](https://flask.palletsprojects.com/)
+  [![Electron](https://img.shields.io/badge/Desktop-Electron-47848F.svg)](https://www.electronjs.org/)
+  [![MCP](https://img.shields.io/badge/Agent_Control-MCP-7C3AED.svg)](skills/optionscope-app/SKILL.md)
 
-	
+  <p><em>Quantitative research tooling. Not financial advice.</em></p>
+
   <img src="https://github.com/Manojbhat09/optionscope/blob/main/public/demo.gif" alt="Demo GIF"/>
   <div style="text-align: center;" align="center">
       <p></p>
@@ -20,7 +23,7 @@
 
 Supercharge your Robinhood options trading strategy with data-driven insights! 🚀
 The **Options Trading Analysis Dashboard** is a powerful web application designed for options traders who want to understand and improve their trading performance. By securely fetching your options trading data directly from Robinhood, this dashboard provides in-depth analytics, interactive visualizations, and a platform for you to reflect, take notes, and develop better trading strategies.
-
+It runs **100% locally** — your credentials and API keys stay in your browser (or a local `.env`), the Flask backend talks only to Robinhood/market-data providers from your machine, and nothing is uploaded anywhere.
 
 Whether you're a seasoned options trader or just getting started, this tool helps you:
 
@@ -29,9 +32,119 @@ Whether you're a seasoned options trader or just getting started, this tool help
 - Identify your most profitable instruments and strategies.
 - Keep track of your thoughts and strategies with integrated note-taking.
 
+| Surface | What it answers |
+|---|---|
+| **📊 Dashboard** | *How am I doing overall?* — P/L stats, gain-ratio scatter, calendars, fingerprints |
+| **⏮ Trade Replay** | *Why did THIS trade work or fail?* — any closed position replayed on its stock chart |
+| **🎯 Spot Replay** | *What should I do with THIS open position?* — live edge analysis for a position you hold today |
+…all wrapped by a **persistent AI assistant** that can see every page, and an **MCP server** that lets external AI agents drive the app.
 
+## 📸 Screenshots
+
+> **Placeholder — drop screenshots here** (suggested captures listed per section below)
+
+| # | Suggested capture | File to add |
+|---|---|---|
+| 1 | Dashboard, night theme, loaded account | `public/shot-dashboard-night.png` `public/shot-dashboard-day.png`  |
+| 2 | Trade Replay single trade w/ chart + news | `public/shot-trade-replay.png` |
+| 3 | Multi-select toolbar + per-ticker cards | `public/shot-multiselect.png` |
+| 4 | Spot Replay report | `public/spotreplay1.jpg` `public/spotreplay2.jpg` `public/spotreplay3.jpg`  |
+| 5 | Settings Center → Preferences | `public/shot-settings.png` |
+| 6 | AI assistant sidebar over the dashboard | `public/shot-assistant.png` `public/thinking.jpg` `public/thinking2.jpg` `public/thinking3.jpg` `public/thinking4.jpg` |
 
 ## 🌟 Features
+
+
+## 📊 Dashboard
+
+<!-- PLACEHOLDER: screenshot — dashboard with stat cards + scatter (public/shot-dashboard-night.png) -->
+
+- **Stat cards** — total P/L, profit, loss, trade count, win rate (night-mode safe, configurable decimals/compact format).
+- **Gain Ratio scatter** — every closed trade by close date vs sell/buy ratio. Plain click opens Trade Replay; **Ctrl/Cmd+click** (or the **Multi-select** toggle) builds a selection.
+- **Cumulative P/L over time** — with **Single-plot** (one line per ticker + overall) and **Multi-ticker** (stacked per-ticker charts) layouts.
+- **Top Profitable / Loss-Making tables** — scrollable, with a **Limit** input (default 100) to list as many tops as you want.
+- **P&L calendar** — month grid of daily/period P&L with shareable summary.
+- **Stock Price & Option Transactions** — overlay any ticker's price around a chosen date window.
+- **Trading Notes** — collapsible how-to/playbook strip shared across all three pages.
+
+## ⏮ Trade Replay
+
+<!-- PLACEHOLDER: screenshot — replayed trade with buy/sell lines + VIX (public/shot-trade-replay.png) -->
+
+Click any dot (or a row in the top-trades table) to replay that position against its stock chart:
+
+- **Stock chart** with ▲ BUY / ▼ SELL lines at the exact timestamps, hold-period shading, **VIX overlay** (right axis), RSI panel, and drag-zoom.
+- **Line / Area / Candle** modes · **Interval** picker (auto/1m/5m/15m/1h/1d) with automatic degradation notices when a provider can't serve the requested grain.
+- **News context** for the ticker around the hold window.
+- **Trade Journal** — four structured prompts per trade (thesis, entry signal, exit reason, lessons), saved locally.
+- **Win/Loss fingerprints** — always-visible side-by-side cards (2x+ gainers vs >50% losers): top tickers, option type, avg DTE, avg hold, avg P&L.
+
+### 🆕 Multi-select & Price-Action charts
+
+<!-- PLACEHOLDER: screenshot — orange selection toolbar + per-ticker cards (public/shot-multiselect.png) -->
+
+- **Select many trades**: flip the **Multi-select** button on the Gain Ratio card (or just **Ctrl+click** dots any time).
+- An **orange toolbar** appears: `n selected · ▲W ▼L · P&L` with **Clear** — and the whole page reflects the selection: pattern cards show a `SELECTED n` badge, counts switch to the subset, and everything recomputes instantly (pure client-side).
+- **Selected Trades · Price Action** charts, two exclusive layouts:
+  - **Single-plot** — one chart, a line per ticker (% change when several tickers, raw close for one) + trade markers + VIX + **RSI when exactly one ticker is selected**.
+  - **Multi-ticker** — **one separate card per ticker**, each with a per-trade detail table (Gain Ratio · P&L · Buy/Sell $/contract · Buy/Sell time · Held), its own chart (Line/Area/Candle), VIX overlay, RSI panel and drag-zoom.
+- **Day-trade aware**: selections containing same-day trades automatically fetch 1m/5m/15m candles so ▲/▼ markers don't collapse onto one daily bar, and all timestamps display seconds.
+
+**What this helps with:** tag your best breakout plays and your worst chases, then compare their charts side by side — per-ticker cards make it obvious whether your losers share an entry pattern (e.g. buying the first red candle) that single-trade replay hides.
+
+## 🎯 Spot Replay
+
+<!-- PLACEHOLDER: screenshot — Spot Replay report (public/shot-spot-replay.png) -->
+
+A dynamic **options-edge analyzer** for a position you hold *right now*:
+
+1. **Paste your position** (ticker, strike, expiry, cost, current price — a pre-filled example is ready to run) or fill the form; optionally attach a chart screenshot for the vision model.
+2. Hit **Run Analysis** — an agent pipeline fetches market data, runs web research (DuckDuckGo), Monte-Carlo simulation, ML forecasts (Gradient Boosting / Random Forest / ARIMA) and renders a full report: probability of ITM, probability of profit, **hold-vs-sell expected values**, Kelly fraction, regime table and a final recommendation.
+3. Your last inputs are remembered; the LLM provider/model is configurable per-surface.
+
+**What this helps with:** replaces gut-feel "should I close this?" with expected-value math — hold EV vs sell EV per contract, plus the probability the position finishes in the money.
+
+## 🤖 AI assistant (built in)
+
+<!-- PLACEHOLDER: screenshot — assistant sidebar (public/shot-assistant.png) -->
+
+- Persistent sidebar (`Ctrl+/`) that survives navigation and **sees the active page's context** — stats, tables, the replayed trade, or the Spot Replay verdict.
+- Streaming responses, web search toggle, per-surface provider/model/timeout, chat history with export/clear/retention.
+- Any provider key you paste works everywhere: Anthropic, OpenAI, OpenRouter, InferX, Z.ai, CommandCode, or a **custom/local endpoint** (Ollama, LM Studio, vLLM).
+
+## 🧩 MCP — let external agents drive the app
+
+OptionScope ships an **MCP server** (`backend/mcp_server.py`) + agent bridge so Claude Desktop / any MCP client can: navigate pages, read full UI state, take screenshots, query trades and run analysis — see [`skills/optionscope-app/SKILL.md`](skills/optionscope-app/SKILL.md).
+
+- Toggle it in **Setup → Preferences → MCP / agent control** (loopback-only by default; LAN exposure is opt-in and applies next launch).
+- Optional **screenshot redaction** masks login/password fields before an agent ever sees them.
+
+## ⚙️ Settings Center (gear → Setup)
+
+Everything lives in four tabs — no `.env` editing required:
+
+| Tab | Contents |
+|---|---|
+| **Account & Data** | Robinhood login + default date range |
+| **AI Providers** | all provider keys + custom/local endpoint (shared by assistant & Spot Replay) |
+| **Preferences** | everything below ↓ |
+| **About** | where data lives, shortcuts |
+
+**Preferences:**
+
+- **Appearance** — Day / Night / **Auto** (night theme 19:00–07:00 local, hands-free).
+- **Data & startup** — remember Robinhood login after a successful fetch · auto-load trades on launch · default date-range lookback (days) · chart data source (auto vs force-yfinance).
+- **Analysis defaults** — remember filters between sessions · P/L decimal places · compact thousands.
+- **Assistant & AI** — temperature · max tokens · web-research default · chat history retention + export/clear.
+- **MCP / agent control** — enable switch · allow LAN · screenshot redaction.
+- **Env-file persistence** — write settings to `backend/.env` on save, and/or use `.env` values as defaults on next startup (manual `.env` entries are preserved).
+- **Market data** — Alpaca key/secret + Polygon key (shared with Trade Replay charts/news).
+- **Danger zone** — one-click wipe of all local data.
+
+## 🌗 Day / night theme
+
+The header button cycles **Day → Night → Auto**. One `<html data-theme>` attribute drives every surface, including dialogs and charts.
+
 
 ___
 
@@ -77,6 +190,47 @@ Learn *why* your best trades worked — and why your worst trades failed — by 
 
 ___
 
+** Update - Cache policy**
+
+````text
+New files:
+- backend/cache_store.py — CacheStore/FileCacheStore: atomic writes (temp file + os.replace), corrupt-file-safe reads, TTL support via age_seconds(). The one storage implementation both caches now use.
+- backend/range_cache.py — RangeCoverageCache: the single, tested implementation of "is [start,end] actually covered, or do I need to fetch, and from where." This is what replaces the two independently-buggy coverage checks.
+
+backend/get_rh_options_app.py — full rewrite:
+- Collapsed the old dual pickle+CSV cache into one coverage-tracked cache entry per account, namespaced by a hash of the username (fixes the "single global file, accounts collide" issue).
+- Added incremental sync: when the cache already reaches back far enough but is stale (>5min TTL), it now fetches only from the last-synced date forward instead of re-pulling all 38 pages every time.
+- Fixed the log message that would've claimed "cache covers X" even during a full backfill.
+- delete_cache and /api/clear-cache now take username and clear the right account's entry specifically.
+
+backend/app.py — stock-history cache:
+- Moved onto FileCacheStore (atomic writes).
+- Fixed the interval key/content mismatch: TTL is now chosen from the actual granularity stored in the payload, not the one merely requested — so a 1m request that fell back to 1d data correctly gets the 1d TTL bucket instead of being treated as stale every 5 minutes.
+- Removed the unconditional backup/ snapshot-per-fetch (was pure unbounded disk growth, already 9.5MB from local testing alone).
+
+Measured speedup (real account, real Robinhood API):
+
+┌─────────────────────────────────────┬────────────────────┬──────────────────────────────────────────────┐
+│              Scenario               │       Before       │                    After                     │
+├─────────────────────────────────────┼────────────────────┼──────────────────────────────────────────────┤
+│ Cold fetch (2023→now, full history) │ ~46-82s            │ ~46-72s (unavoidable — Robinhood pagination) │
+├─────────────────────────────────────┼────────────────────┼──────────────────────────────────────────────┤
+│ Repeat fetch, same range            │ ~46-82s every time │ 1.2s                                         │
+├─────────────────────────────────────┼────────────────────┼──────────────────────────────────────────────┤
+│ Narrower range within cache         │ ~46-82s every time │ 0.45s                                        │
+├─────────────────────────────────────┼────────────────────┼──────────────────────────────────────────────┤
+│ Stale-but-covered refresh           │ full re-pull       │ incremental sync, <1s                        │
+├─────────────────────────────────────┼────────────────────┼──────────────────────────────────────────────┤
+│ /api/clear-cache + refetch          │ —                  │ works correctly, scoped to account           │
+└─────────────────────────────────────┴────────────────────┴──────────────────────────────────────────────┘
+
+Also fixed: .gitignore now excludes backend/orders_cache/, backend/stock_cache/, backend/backup/, backend/__pycache__/ — none of these are runtime cache state that belongs in version control.
+
+One thing I did not touch, flagging for you to decide: backend/orders.csv is currently tracked in git (git ls-files confirms it) and contains your real trade history — dates, tickers, amounts. It's now unused (superseded by backend/orders_cache/), but I didn't remove it from version control since that touches git history/tracked state, which needs your sign-off. If you want it out: git rm --cached backend/orders.csv untracks it going forward (keeps your local copy) — note it'd still exist in past commits unless you also rewrite history, which is a separate, more invasive step.
+````
+
+___
+
 **🔮 Update — P&L Calendar**
 
 Daily, weekly, monthly, and yearly P&L grids with green/red cells and dollar amounts. Click the view tabs above the bar chart to switch. Share any period on X with one click.
@@ -91,10 +245,6 @@ ___
 - **Chatbot Integration**: Interact with a chatbot to get quick answers and assistance on using the dashboard. Knows your data & plots.
   - Supports **Anthropic Claude**, **OpenAI GPT-4o**, and **OpenRouter** (free Llama models) — switch providers and paste your API key directly in the chat UI
   - Screenshots stored locally in `backend/screenshots` folder.
-  <div style="text-align: center;" align="center">
-      <p></p>
-      <img src="public/chatbot.jpg" alt="Chatbot Image" width="900"/>
-    </div>
 ___
 
 - 📈 **Secure Data Fetching**: Log in with your Robinhood credentials to fetch your options trading history within a specified date range.
@@ -130,6 +280,7 @@ ___
 | Auto-load on mount when cached credentials are available | ✅ Complete |
 | Clickable ticker chips to filter the scatter plot | ✅ Complete |
 
+---
 
 ### Prerequisites
 
@@ -138,112 +289,76 @@ ___
 - **Robinhood Account Credentials**
 
 
-## 🚀 Quick Start
+### 🗺 Navigation map
 
-1. Clone the repository:
-   ```
-   git clone git@github.com:Manojbhat09/optionscope.git
-   ```
+```
+Dashboard (default)
+ ├─ header: date range · Fetch Data · cache-clear · theme cycle · Setup ⚙ · assistant 💬
+ ├─ stat cards → Gain Ratio scatter ──(click dot)──▶ Trade Replay
+ ├─ Top tables · P&L calendar · Trading Notes
+ ├─ floating ▸ Spot Replay (green) · ▸ Trade Replay (blue)
+ │
+Trade Replay
+ ├─ controls row: dates · gear (Robinhood login) · Load Trades
+ ├─ Gain Ratio scatter [Multi-select] → orange toolbar → Price-Action charts
+ ├─ selected trade: KPI strip · chart (Line/Area/Candle · Interval · zoom) · VIX · RSI · News · Journal
+ └─ Win/Loss fingerprints · top performers · Trading Notes
+ │
+Spot Replay
+ ├─ paste block / form (pre-filled example) · chart screenshot · Run Analysis
+ └─ agent activity log · report (MC · ML · EV hold/sell · decision matrix) · Trading Notes
+```
 
-2. Install dependencies:
-   ```
-   cd optionscope
-   pip install -r backend/requirements.txt
-   npm run build
-   npm install # make sure to use correct nodejs, 'nvm use 18.12.1' & 'npm audit --fix' 
-   ```
+### 🧱 Architecture
 
-3. Start the development server:
-   ```
-   npm start
-   ```
+```
+React (CRA) ──► Flask (backend/) ──► Robinhood API · yfinance · Alpaca · Polygon · LLM providers
+     │                │
+     │                ├─ agent_bridge.py  (SSE control plane)
+     │                ├─ mcp_server.py    (MCP tool layer for external agents)
+     │                ├─ chat_history.py  (append-only local chat log)
+     │                └─ data/            (caches, chat log, agent settings)
+     └─ localStorage (creds, keys, preferences — this device only)
+```
 
-4. Open your browser and navigate to `http://localhost:3000`
-
-
-## 🚀 Elaborate Installing and Running the Flask Python Backend
-
-**Prerequisites:**
-- Python 3.7+ should be installed
-- Pip (Python package manager) should be available
-
-**Steps:**
-
-1. **Clone or Copy the Code**
-   - Place the backend code (the files you showed) in a directory on your machine.
-
-2. **Create a Virtual Environment** (recommended):
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install Python Dependencies:**
-   - You need to install Flask, Flask-CORS, pandas, numpy, robin_stocks, yfinance, python-dotenv, tqdm, pillow, requests (and possibly others).  
-   - The simplest way is to create a `requirements.txt` file or just run:
-     ```bash
-     pip install flask flask-cors pandas numpy yfinance robin_stocks python-dotenv tqdm pillow requests
-     ```
-   - If you already have a `requirements.txt` file, use:
-     ```bash
-     pip install -r requirements.txt
-     ```
-
-4. **Set Up Environment Variables:**  
-   - Create a `.env` file in your backend directory with the required variables, e.g.:
-     ```
-     REACT_APP_OPENROUTER_API_KEY=your_api_key_here
-     ```
-   - Replace `your_api_key_here` with your real key.
-   - Or use export and put in ~/.bashrc
-     ```
-     export REACT_APP_OPENROUTER_API_KEY=sk-
-     ```
-
-5. **Run the Flask App:**
-   ```bash
-   cd backend
-   python app.py
-   ```
-   - The server will run on `http://127.0.0.1:5000/` by default.
+- **Desktop**: Electron (`desktop/`) wraps the same UI and spawns the backend as a sidecar; tags `v*` build portable zips + installers via GitHub Actions.
+- **Privacy**: credentials live in your browser; the backend only talks to Robinhood/market-data providers from your machine.
 
 ---
 
-## 🟢 Using with Node.js (e.g., React, Next.js Frontend)
+## 🚀 Quick start
 
-If you use `nvm` (Node Version Manager), you can update as follows:
+### Option A — Desktop app (easiest)
+1. Grab the installer for your OS from [Releases](https://github.com/Manojbhat09/optionscope/releases)
+   (`OptionScope-Setup.exe` · `.dmg` · `.AppImage`/`.deb`).
+2. Open it → click the **gear → Setup** → enter your Robinhood login → **Fetch Data**.
+3. Done. The backend ships frozen inside the app; nothing else to install.
 
+### Option B — Run from source (web app)
 ```bash
-nvm install --lts
-nvm use --lts
-node -v   # Should show v18.x, v20.x, etc.
+git clone https://github.com/Manojbhat09/optionscope && cd optionscope
+
+# 1) backend  (Python 3.10+, deps in requirements.txt)
+cd backend && pip install -r requirements.txt && flask run --port 5000
+
+# 2) frontend (Node 18+)
+cd .. && npm install && npm start          # dev server on :3000 (proxies API to :5000)
+
+# production build instead:
+npm run build && flask run                 # backend serves build/ at /Manojbhat09/optionscope
 ```
 
-Or, to get a specific version (example: v20):
+> Prefer zero-terminal? The **portable zip** in each Release contains the built web app +
+> backend + `START_HERE.sh` / `START_HERE.bat` — unzip and double-click.
 
-```bash
-nvm install 20
-nvm use 20
-```
-
-- You do **not** "install" Python code with Node. Instead, you run your backend and frontend separately, and connect them via HTTP APIs.
-- You can set up a Node.js frontend (React, Next.js, etc) in a separate folder, and call your Flask backend at `http://localhost:5000/api/...` endpoints.
-    - For creating a React app:
-      ```bash
-      npx create-react-app frontend
-      cd frontend
-      npm start
-      ```
-    - Then, fetch data from your Flask backend using AJAX/fetch/axios in your React code.
-
----
-
-## 🔗 Summary Table
-
-| Part        | How to install/run                | Notes                                     |
-|-------------|----------------------------------|-------------------------------------------|
-| Flask Backend | `pip install ...` then `python app.py` | Python 3, use a virtualenv, set .env      |
-| Node Frontend | `npm install`, `npm start` (if using) | Kept separate; frontend calls backend API |
+### First 5 minutes (new-user path)
+1. **Setup** (gear, top right) → *Account & Data* → Robinhood login + date range → Save.
+2. Dashboard → **Fetch Data**. Your order history is fetched once and cached locally.
+3. Skim the stat cards → click any dot in the **Gain Ratio** scatter → you're in **Trade Replay**.
+4. Open **Spot Replay** (green button, bottom-right) → paste an open position (or use the
+   pre-filled example) → **Run Analysis**.
+5. Press `Ctrl+/` to open the **AI assistant** — it can see whatever page you're on. Ask
+   *"what's my worst losing pattern?"*.
 
 ---
 
@@ -356,12 +471,9 @@ Scroll down to view a detailed table containing all your trades, including:
 
 We're constantly working to improve the Options Trading Analysis Dashboard. Here are some exciting features on our roadmap:
 
-- 🤖 AI-powered trade recommendations based on historical performance
 - 🌐 Integration with multiple brokers beyond Robinhood
 - 📱 Mobile app for on-the-go analysis
 - 🔔 Real-time alerts for potential profit-taking or loss-cutting opportunities
-- 🧠 Machine learning models to predict option price movements
-- 🗂️ Custom tagging system for categorizing and filtering trades
 - 🔄 Backtesting functionality to simulate strategies on historical data
 - 👥 Social features to share and compare trading strategies (anonymously)
 
@@ -369,7 +481,6 @@ We're constantly working to improve the Options Trading Analysis Dashboard. Here
 
 - **Integration with Other Brokers**: Support for TD Ameritrade, E*TRADE, etc.
 - **Advanced Analytics**: Add more metrics like Sharpe ratio, volatility analysis.
-- **Real-Time Data**: Incorporate live data feeds for real-time strategy testing.
 - **Cloud Deployment**: Options to deploy the dashboard on cloud platforms.
 
 ## 🤝 Contributing
@@ -398,6 +509,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [React](https://reactjs.org/) for the frontend framework
 - [Flask](https://flask.palletsprojects.com/) for the backend server
 - [Recharts](https://recharts.org/) for beautiful, responsive charts
+
+
+## ⚠️ Disclaimer
+
+OptionScope is quantitative research tooling for **your own** trading data. Nothing in it is
+financial advice. Options trading involves substantial risk of loss.
 
 ---
 

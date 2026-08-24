@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardHeader, CardContent, TextField, Button } from '@mui/material';
+import { Button, TextField } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
+import { BookIcon } from './components/icons';
 
 
 const defaultNotes = `# Trading Notes
@@ -43,6 +44,7 @@ const defaultNotes = `# Trading Notes
 const TradingNotes = () => {
   const [notes, setNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false); // collapsed by default — this is reference/how-to text, not live data
 
   useEffect(() => {
     const savedNotes = localStorage.getItem('tradingNotes');
@@ -81,20 +83,41 @@ const TradingNotes = () => {
 
 
   return (
-    <Card style={{ marginTop: '1rem' }}>
-      <CardHeader 
-        title="Trading Notes" 
-        action={
-          <Button 
-            variant="contained" 
-            color="primary" 
+    // Plain themed surfaces (not MUI Card/Paper): MUI Paper is hardcoded
+    // white without a dark ThemeProvider, which left this strip glowing white
+    // on the Trade Replay page at night. CSS vars keep it correct on both
+    // pages and both themes.
+    <div style={{
+      // Flush with the sibling MUI Cards on the dashboard (they carry no side
+      // margins) and symmetric header padding so the collapsed strip matches
+      // a CardHeader's height instead of looking squashed.
+      margin: '16px 0 0', background: 'var(--os-surface)', borderRadius: 4,
+      border: '1px solid var(--os-border)', boxShadow: 'var(--os-shadow-1)',
+      color: 'var(--os-text)', overflow: 'hidden',
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '14px 16px',
+      }}>
+        <span
+          onClick={() => setExpanded(e => !e)}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none', fontSize: 15, fontWeight: 600 }}
+        >
+          <span style={{ fontSize: 13, color: 'var(--os-text-3)' }}>{expanded ? '▾' : '▸'}</span>
+          <BookIcon size={15} /> Trading Notes
+          {!expanded && <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--os-text-3)' }}>— how to use this dashboard</span>}
+        </span>
+        {expanded && (
+          <Button
+            variant="contained"
+            color="primary"
             onClick={() => setIsEditing(!isEditing)}
           >
             {isEditing ? 'Preview' : 'Edit'}
           </Button>
-        }
-      />
-      <CardContent>
+        )}
+      </div>
+      {expanded && <div style={{ padding: '8px 16px 16px' }}>
         {isEditing ? (
           <TextField
             multiline
@@ -103,9 +126,13 @@ const TradingNotes = () => {
             fullWidth
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            sx={{
+              '& .MuiInputBase-input': { color: 'var(--os-text)' },
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--os-border)' },
+            }}
           />
         ) : (
-          <div style={{ maxHeight: '600px', overflow: 'auto' }}>
+          <div style={{ maxHeight: '600px', overflow: 'auto', color: 'var(--os-text)', fontSize: 14, lineHeight: 1.6 }}>
             <ReactMarkdown>{notes}</ReactMarkdown>
           </div>
         )}
@@ -166,8 +193,8 @@ const TradingNotes = () => {
 
         </div>
 
-      </CardContent>
-    </Card>
+      </div>}
+    </div>
   );
 };
 

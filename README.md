@@ -1,7 +1,18 @@
 <div align="center">
-  <img src="https://your-logo-url-here.png" alt="OptionScope Logo" width="200"/>
-  <h1>🚀 OptionScope 📊</h1>
-  <h3>Robinhood options performance dashboard · trade replay · AI spot-analysis · built-in AI assistant</h3>
+  <!-- logo-less -->
+  <!--<img src="https://your-logo-url-here.png" alt="OptionScope Logo" width="200"/> -->
+  
+````text 
+  ██████╗ ██████╗ ████████╗██╗ ██████╗ ███╗   ██╗███████╗ ██████╗ ██████╗ ██████╗ ███████╗
+██╔═══██╗██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝
+██║   ██║██████╔╝   ██║   ██║██║   ██║██╔██╗ ██║███████╗██║     ██║   ██║██████╔╝█████╗
+██║   ██║██╔═══╝    ██║   ██║██║   ██║██║╚██╗██║╚════██║██║     ██║   ██║██╔═══╝ ██╔══╝
+╚██████╔╝██║        ██║   ██║╚██████╔╝██║ ╚████║███████║╚██████╗╚██████╔╝██║     ███████╗
+ ╚═════╝ ╚═╝        ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚══════╝
+````
+  <!-- <h1>🚀 OptionScope 📊</h1> -->
+  <h3> Options performance dashboard · trade replay · AI spot-analysis · built-in AI assistant</h3> 
+  <h5>🚀 OptionScope 📊</h5>
   <p><em>Elevate Your Options Trading with Data-Driven Insights</em></p>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

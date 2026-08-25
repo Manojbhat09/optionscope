@@ -30,6 +30,8 @@ jobs:
           mkdir -p dist/optionscope/build
           cp -r backend dist/optionscope/
           rm -rf dist/optionscope/backend/data/chat_sessions.jsonl
+          cp -r desktop dist/optionscope/desktop
+          rm -rf dist/optionscope/desktop/node_modules dist/optionscope/desktop/release dist/optionscope/desktop/sidecar
           cp START_HERE.sh START_HERE.bat README.md dist/optionscope/ 2>/dev/null || true
           chmod +x dist/optionscope/START_HERE.sh
           cp -r build/. dist/optionscope/build/

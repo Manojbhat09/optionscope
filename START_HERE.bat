@@ -19,8 +19,8 @@ if not exist .venv (
   python -m venv .venv
 )
 echo Installing/updating backend packages...
-.venv\Scripts\pip install -q --upgrade pip
-.venv\Scripts\pip install -q -r backend\requirements.txt
+.venv\Scripts\python -m pip install -q --upgrade pip
+.venv\Scripts\python -m pip install -q -r backend\requirements.txt
 
 if not exist node_modules (
   echo Installing frontend packages ^(first run only, a few minutes^)...

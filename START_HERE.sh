@@ -25,8 +25,8 @@ if [ ! -d .venv ]; then
   "$PYTHON" -m venv .venv
 fi
 echo "→ Installing/updating backend packages…"
-.venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r backend/requirements.txt
+.venv/bin/python -m pip install -q --upgrade pip
+.venv/bin/python -m pip install -q -r backend/requirements.txt
 
 # ── frontend build (skipped if already built and node_modules present) ──────
 if [ ! -d node_modules ]; then

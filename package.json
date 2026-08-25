@@ -8,7 +8,7 @@
     "@mui/icons-material": "^5.17.1",
     "@mui/material": "^5.17.1",
     "ajv": "^8.20.0",
-    "axios": "^1.4.0",
+    "axios": "^1.18.0",
     "html2canvas": "^1.4.1",
     "katex": "^0.16.47",
     "papaparse": "^5.4.1",

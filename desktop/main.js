@@ -45,6 +45,11 @@ function startBackend(port) {
     bin = path.join(process.resourcesPath, 'backend', isWin ? 'optionscope-backend.exe' : 'optionscope-backend');
     fs.chmodSync(bin, 0o755); // no-op on Windows; fixes exec bit on mac/linux
     env.OPTIONSCOPE_BUILD_DIR = path.join(process.resourcesPath, 'build');
+    // frozen exe can't take flask CLI args — Allow LAN goes through HOST env
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'backend', 'data', 'agent_settings.json'), 'utf8'));
+      if (cfg.allow_lan) env.HOST = '0.0.0.0';
+    } catch { /* no settings file — loopback only */ }
     args = [];
   } else {
     // dev fallback: run the Flask app from source with whatever python exists

@@ -619,4 +619,12 @@ def app_settings_env():
 
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 5000))
-  app.run(debug=True, host='127.0.0.1', port=port)
+  # Frozen sidecar (PyInstaller): debug/reloader MUST stay off — the reloader
+  # would re-spawn sys.executable (itself) forever. HOST is wired so the
+  # desktop launcher's "Allow LAN" preference works in frozen builds too.
+  app.run(
+      debug=os.environ.get('FLASK_DEBUG') == '1',
+      use_reloader=False,
+      host=os.environ.get('HOST', '127.0.0.1'),
+      port=port,
+  )

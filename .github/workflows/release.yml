@@ -32,8 +32,8 @@ jobs:
           rm -rf dist/optionscope/backend/data/chat_sessions.jsonl
           cp -r desktop dist/optionscope/desktop
           rm -rf dist/optionscope/desktop/node_modules dist/optionscope/desktop/release dist/optionscope/desktop/sidecar
-          cp START_HERE.sh START_HERE.bat APP_START_HERE.sh APP_START_HERE.bat README.md dist/optionscope/ 2>/dev/null || true
-          chmod +x dist/optionscope/START_HERE.sh dist/optionscope/APP_START_HERE.sh
+          cp START_HERE.sh START_HERE.bat START_HERE.command APP_START_HERE.sh APP_START_HERE.bat APP_START_HERE.command README.md dist/optionscope/ 2>/dev/null || true
+          chmod +x dist/optionscope/START_HERE.sh dist/optionscope/START_HERE.command dist/optionscope/APP_START_HERE.sh dist/optionscope/APP_START_HERE.command
           cp -r build/. dist/optionscope/build/
           cd dist && zip -rq optionscope-${GITHUB_REF_NAME}-portable.zip optionscope
       - uses: actions/upload-artifact@v4

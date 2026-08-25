@@ -37,7 +37,9 @@ if %NEED_NPM%==1 (
       echo   1. Install Node 20+ from https://nodejs.org  (check "Add to PATH")
       echo   2. Close ALL terminals / reboot, then double-click again
       echo   3. Test:  node --version  ^&  npm --version
-      pause & exit /b 1
+      echo.
+      echo Please install Node.js and then re-run this launcher.
+      pause
     )
   )
 )

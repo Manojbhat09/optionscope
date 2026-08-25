@@ -1,7 +1,7 @@
 {
   "name": "optionscope-desktop",
   "productName": "OptionScope",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Options trade analysis dashboard with AI assistant, Trade Replay and Spot Replay",
   "main": "main.js",
   "author": "OptionScope",

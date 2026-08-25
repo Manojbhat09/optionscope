@@ -28,7 +28,9 @@ if errorlevel 1 (
     echo   3. Test in a new cmd:  node --version  ^&  npm --version
     echo.
     echo PATH=%PATH%
-    pause & exit /b 1
+    echo.
+    echo Please install Node.js and then re-run this launcher.
+    pause
   )
 )
 

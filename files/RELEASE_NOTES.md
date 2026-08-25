@@ -1,6 +1,10 @@
-# v1.2.3 — Mac double-click + Windows Node auto-find
+# v1.2.4 — Windows Node inform (no auto-exit) + websocket-driver fix
 
 *Release notes draft — GitHub Release will append auto-generated commit notes below these.*
+
+## v1.2.4
+- **Windows launchers**: when Node.js is missing, show the fix steps and `pause` (no `exit /b 1`) so the window stays open until you close it.
+- **Security**: `overrides.websocket-driver 0.7.4 → 0.7.5` (GHSA-xv26-6w52-cph6 critical + GHSA-mp7j-qc5w-4988, CVE-2026-54466 — `package.json:70`).
 
 ## v1.2.3
 - **Windows double-click fix**: `APP_START_HERE.bat` / `START_HERE.bat` auto-find Node in `C:\Program Files\nodejs`, `Program Files (x86)`, and `nvm` paths; clearer help when `npm` missing (fixes `Node.js/npm not found` after Finder double-click).

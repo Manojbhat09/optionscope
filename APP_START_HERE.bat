@@ -16,8 +16,20 @@ if errorlevel 1 (
 )
 where npm >nul 2>nul
 if errorlevel 1 (
-  echo Node.js/npm not found. Install Node 20+ from https://nodejs.org and retry.
-  pause & exit /b 1
+  REM Try common install locations (installer without PATH, nvm, fnm)
+  if exist "C:\Program Files\nodejs\npm.cmd" set "PATH=C:\Program Files\nodejs;%PATH%"
+  if exist "C:\Program Files (x86)\nodejs\npm.cmd" set "PATH=C:\Program Files (x86)\nodejs;%PATH%"
+  if exist "%APPDATA%\nvm\current\npm.cmd" set "PATH=%APPDATA%\nvm\current;%PATH%"
+  where npm >nul 2>nul
+  if errorlevel 1 (
+    echo Node.js/npm not found.
+    echo   1. Install Node 20+ from https://nodejs.org  (check "Add to PATH" during setup)
+    echo   2. Close ALL terminals / reboot, then double-click again
+    echo   3. Test in a new cmd:  node --version  ^&  npm --version
+    echo.
+    echo PATH=%PATH%
+    pause & exit /b 1
+  )
 )
 
 if not exist .venv (

@@ -17,8 +17,8 @@ The app must be running (its UI holds the control bridge open):
 ```bash
 # desktop app (Windows/macOS/Linux)
 cd desktop && BACKEND_DIR=../backend PYTHON=<python-with-deps> npm start
-# or plain web: backend on :5000, UI served at /Manojbhat09/optionscope
-cd backend && python -m flask run --port 5000   # then open http://127.0.0.1:5000/Manojbhat09/optionscope
+# or plain web: backend on :5000, UI served at /
+cd backend && python -m flask run --port 5000   # then open http://127.0.0.1:5000
 ```
 
 ## Quick MCP install
@@ -91,4 +91,4 @@ curl -s http://127.0.0.1:5000/api/agent/screenshot -o shot.png
 - `409 no app UI connected` → the app window/browser tab is closed; start it.
 - `504 did not answer` → UI tab is asleep (background tab throttling); focus it.
 - Screenshot 404 → no screenshot taken yet in this backend session.
-- Deep links work too: `http://127.0.0.1:5000/Manojbhat09/optionscope#/replay`.
+- Deep links work too: `http://127.0.0.1:5000/#/replay`.

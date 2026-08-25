@@ -63,8 +63,8 @@ function findFreePort(start) {
   · WSL2 (Windows): make sure WSLg is enabled, then from a WSL terminal:
       export DISPLAY=:0 && npm start
   · Use the app in your normal browser instead:
-      http://<this-host>:3000/Manojbhat09/optionscope   (dev)
-      http://<this-host>:5000/Manojbhat09/optionscope   (production build)
+      http://<this-host>:3000   (dev)
+      http://<this-host>:5000   (production build)
   · Run Electron on your own desktop/laptop once installers are built
       (tag v* → GitHub Release → OptionScope-Setup.exe / .dmg / .AppImage)
   · SSH from a machine WITH a display:   ssh -X user@host

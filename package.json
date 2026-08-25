@@ -33,7 +33,7 @@
   "scripts": {
     "start": "concurrently \"npm run start-react\" \"npm run start-backend\"",
     "start-react": "react-scripts start",
-    "start-backend": "cd backend && /home/mbhat/miniconda3/envs/tradebot/bin/python -m flask run",
+    "start-backend": "cd backend && python -m flask run",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
@@ -62,10 +62,10 @@
     "type": "git",
     "url": "git+https://github.com/Manojbhat09/optionscope.git"
   },
-  "author": "Your Name",
+  "author": "Manojbhat09 <manojbhat09@gmail.com>",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Manojbhat09/optionscope/issues"
   },
-  "homepage": "https://github.com/Manojbhat09/optionscope"
+  "homepage": "."
 }

@@ -345,7 +345,7 @@ cd backend && pip install -r requirements.txt && flask run --port 5000
 cd .. && npm install && npm start          # dev server on :3000 (proxies API to :5000)
 
 # production build instead:
-npm run build && flask run                 # backend serves build/ at /Manojbhat09/optionscope
+npm run build && flask run                 # backend serves build/ at http://localhost:5000
 ```
 
 > Prefer zero-terminal? The **portable zip** in each Release contains the built web app +

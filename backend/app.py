@@ -51,7 +51,7 @@ def safe_jsonify(records):
 BUILD_DIR = os.environ.get('OPTIONSCOPE_BUILD_DIR') or os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'build')
 app = Flask(__name__, static_folder=os.path.join(BUILD_DIR, 'static'),
-            static_url_path='/Manojbhat09/optionscope/static')
+            static_url_path='/static')
 CORS(app)
 
 # ── single-server production mode ────────────────────────────────────────────
@@ -60,8 +60,8 @@ CORS(app)
 # is what the START_HERE launchers, the desktop sidecar and GitHub release
 # builds all rely on.
 
-@app.route('/Manojbhat09/optionscope')
-@app.route('/Manojbhat09/optionscope/')
+@app.route('/')
+@app.route('/index.html')
 def serve_frontend_index():
     index_file = os.path.join(BUILD_DIR, 'index.html')
     if os.path.exists(index_file):
@@ -69,7 +69,7 @@ def serve_frontend_index():
             return f.read()
     return "Frontend not built yet. Run: npm install && npm run build  (or use START_HERE)", 200
 
-@app.route('/Manojbhat09/optionscope/<path:filename>')
+@app.route('/<path:filename>')
 def serve_frontend_asset(filename):
     full = os.path.normpath(os.path.join(BUILD_DIR, filename))
     if full.startswith(BUILD_DIR) and os.path.isfile(full):

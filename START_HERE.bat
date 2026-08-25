@@ -32,7 +32,7 @@ if not exist build\index.html (
 )
 
 echo Starting server at http://localhost:5000 ...
-start "" http://localhost:5000/Manojbhat09/optionscope
+start "" http://localhost:5000
 set PORT=5000
 .venv\Scripts\python backend\app.py
 pause

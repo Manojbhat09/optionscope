@@ -148,7 +148,7 @@ async function createWindow() {
     return { action: 'deny' };
   });
 
-  win.loadURL(`http://127.0.0.1:${port}/Manojbhat09/optionscope`);
+  win.loadURL(`http://127.0.0.1:${port}/`);
   win.once('ready-to-show', () => win.show());
   win.on('closed', () => { win = null; });
 }

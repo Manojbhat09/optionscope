@@ -41,7 +41,7 @@ fi
 # ── launch ──────────────────────────────────────────────────────────────────
 echo "→ Starting server at http://localhost:5000 …"
 ( sleep 4
-  if command -v xdg-open >/dev/null 2>&1; then xdg-open http://localhost:5000/Manojbhat09/optionscope
-  elif command -v open >/dev/null 2>&1; then open http://localhost:5000/Manojbhat09/optionscope
-  else echo "   Open http://localhost:5000/Manojbhat09/optionscope in your browser"; fi ) &
+  if command -v xdg-open >/dev/null 2>&1; then xdg-open http://localhost:5000
+  elif command -v open >/dev/null 2>&1; then open http://localhost:5000
+  else echo "   Open http://localhost:5000 in your browser"; fi ) &
 PORT=5000 .venv/bin/python backend/app.py

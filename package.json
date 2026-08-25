@@ -67,5 +67,8 @@
   "bugs": {
     "url": "https://github.com/Manojbhat09/optionscope/issues"
   },
-  "homepage": "."
+  "homepage": ".",
+  "overrides": {
+    "websocket-driver": "0.7.5"
+  }
 }

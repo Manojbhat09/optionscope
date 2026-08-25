@@ -10,19 +10,18 @@
   [![Electron](https://img.shields.io/badge/Desktop-Electron-47848F.svg)](https://www.electronjs.org/)
   [![MCP](https://img.shields.io/badge/Agent_Control-MCP-7C3AED.svg)](skills/optionscope-app/SKILL.md)
 
-  <p><em>Quantitative research tooling. Not financial advice.</em></p>
+
 
   <img src="https://github.com/Manojbhat09/optionscope/blob/main/public/demo.gif" alt="Demo GIF"/>
   <div style="text-align: center;" align="center">
       <p></p>
       <img src="public/other.jpg" alt="other" width="900"/>
     </div>
-
+  <h6><em>Quantitative research tool. Not financial advice.</em></h6>
 </div>
 
 
-Supercharge your Robinhood options trading strategy with data-driven insights! 🚀
-The **Options Trading Analysis Dashboard** is a powerful web application designed for options traders who want to understand and improve their trading performance. By securely fetching your options trading data directly from Robinhood, this dashboard provides in-depth analytics, interactive visualizations, and a platform for you to reflect, take notes, and develop better trading strategies.
+Supercharge your Robinhood options trading strategy with data-driven insights! Optionscope is a powerful web application designed for options traders who want to understand and improve their trading performance. By securely fetching your options trading data directly from Robinhood, this dashboard provides in-depth analytics, interactive visualizations, and a platform for you to reflect, take notes, and develop better trading strategies.
 It runs **100% locally** — your credentials and API keys stay in your browser (or a local `.env`), the Flask backend talks only to Robinhood/market-data providers from your machine, and nothing is uploaded anywhere.
 
 Whether you're a seasoned options trader or just getting started, this tool helps you:
@@ -37,25 +36,24 @@ Whether you're a seasoned options trader or just getting started, this tool help
 | **📊 Dashboard** | *How am I doing overall?* — P/L stats, gain-ratio scatter, calendars, fingerprints |
 | **⏮ Trade Replay** | *Why did THIS trade work or fail?* — any closed position replayed on its stock chart |
 | **🎯 Spot Replay** | *What should I do with THIS open position?* — live edge analysis for a position you hold today |
+
 …all wrapped by a **persistent AI assistant** that can see every page, and an **MCP server** that lets external AI agents drive the app.
 
 ## 📸 Screenshots
 
-> **Placeholder — drop screenshots here** (suggested captures listed per section below)
-
-| # | Suggested capture | File to add |
+| # | Feature |  |
 |---|---|---|
-| 1 | Dashboard, night theme, loaded account | `public/shot-dashboard-night.png` `public/shot-dashboard-day.png`  |
-| 2 | Trade Replay single trade w/ chart + news | `public/shot-trade-replay.png` |
-| 3 | Multi-select toolbar + per-ticker cards | `public/shot-multiselect.png` |
-| 4 | Spot Replay report | `public/spotreplay1.jpg` `public/spotreplay2.jpg` `public/spotreplay3.jpg`  |
-| 5 | Settings Center → Preferences | `public/shot-settings.png` |
-| 6 | AI assistant sidebar over the dashboard | `public/shot-assistant.png` `public/thinking.jpg` `public/thinking2.jpg` `public/thinking3.jpg` `public/thinking4.jpg` |
+| 1 | Dashboard, night theme, loaded account | ![Dashboard night](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-dashboard-night.png) ![Dashboard day](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-dashboard-day.png)  |
+| 2 | Trade Replay single trade w/ chart + news | ![Trade replay](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-trade-replay.png) |
+| 3 | Multi-select toolbar + per-ticker cards | ![Multiselect](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-multiselect.png) |
+| 4 | Spot Replay report | ![Spot replay 1](https://github.com/Manojbhat09/optionscope/blob/main/public/spotreplay1.jpg) ![Spot replay 2](https://github.com/Manojbhat09/optionscope/blob/main/public/spotreplay2.jpg) ![Spot replay 3](https://github.com/Manojbhat09/optionscope/blob/main/public/spotreplay3.jpg)  |
+| 5 | Settings Center → Preferences | ![Settings](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-settings.png) |
+| 6 | AI assistant sidebar over the dashboard | ![Assistant1](https://github.com/Manojbhat09/optionscope/blob/main/public/shot-assistant.png) ![Thinking](https://github.com/Manojbhat09/optionscope/blob/main/public/thinking.jpg) ![thinking 2](https://github.com/Manojbhat09/optionscope/blob/main/public/thinking2.jpg) ![thinking 3](https://github.com/Manojbhat09/optionscope/blob/main/public/thinking3.jpg) ![Dashboard night](https://github.com/Manojbhat09/optionscope/blob/main/public/thinking4.jpg) |
 
 ## 🌟 Features
 
 
-## 📊 Dashboard
+### 📊 Dashboard
 
 <!-- PLACEHOLDER: screenshot — dashboard with stat cards + scatter (public/shot-dashboard-night.png) -->
 
@@ -67,7 +65,7 @@ Whether you're a seasoned options trader or just getting started, this tool help
 - **Stock Price & Option Transactions** — overlay any ticker's price around a chosen date window.
 - **Trading Notes** — collapsible how-to/playbook strip shared across all three pages.
 
-## ⏮ Trade Replay
+### ⏮ Trade Replay
 
 <!-- PLACEHOLDER: screenshot — replayed trade with buy/sell lines + VIX (public/shot-trade-replay.png) -->
 
@@ -79,7 +77,7 @@ Click any dot (or a row in the top-trades table) to replay that position against
 - **Trade Journal** — four structured prompts per trade (thesis, entry signal, exit reason, lessons), saved locally.
 - **Win/Loss fingerprints** — always-visible side-by-side cards (2x+ gainers vs >50% losers): top tickers, option type, avg DTE, avg hold, avg P&L.
 
-### 🆕 Multi-select & Price-Action charts
+#### 🆕 Multi-select & Price-Action charts
 
 <!-- PLACEHOLDER: screenshot — orange selection toolbar + per-ticker cards (public/shot-multiselect.png) -->
 
@@ -92,7 +90,7 @@ Click any dot (or a row in the top-trades table) to replay that position against
 
 **What this helps with:** tag your best breakout plays and your worst chases, then compare their charts side by side — per-ticker cards make it obvious whether your losers share an entry pattern (e.g. buying the first red candle) that single-trade replay hides.
 
-## 🎯 Spot Replay
+### 🎯 Spot Replay
 
 <!-- PLACEHOLDER: screenshot — Spot Replay report (public/shot-spot-replay.png) -->
 
@@ -104,22 +102,20 @@ A dynamic **options-edge analyzer** for a position you hold *right now*:
 
 **What this helps with:** replaces gut-feel "should I close this?" with expected-value math — hold EV vs sell EV per contract, plus the probability the position finishes in the money.
 
-## 🤖 AI assistant (built in)
-
-<!-- PLACEHOLDER: screenshot — assistant sidebar (public/shot-assistant.png) -->
+### 🤖 AI assistant (built in)
 
 - Persistent sidebar (`Ctrl+/`) that survives navigation and **sees the active page's context** — stats, tables, the replayed trade, or the Spot Replay verdict.
 - Streaming responses, web search toggle, per-surface provider/model/timeout, chat history with export/clear/retention.
 - Any provider key you paste works everywhere: Anthropic, OpenAI, OpenRouter, InferX, Z.ai, CommandCode, or a **custom/local endpoint** (Ollama, LM Studio, vLLM).
 
-## 🧩 MCP — let external agents drive the app
+### 🧩 MCP — let external agents drive the app
 
 OptionScope ships an **MCP server** (`backend/mcp_server.py`) + agent bridge so Claude Desktop / any MCP client can: navigate pages, read full UI state, take screenshots, query trades and run analysis — see [`skills/optionscope-app/SKILL.md`](skills/optionscope-app/SKILL.md).
 
 - Toggle it in **Setup → Preferences → MCP / agent control** (loopback-only by default; LAN exposure is opt-in and applies next launch).
 - Optional **screenshot redaction** masks login/password fields before an agent ever sees them.
 
-## ⚙️ Settings Center (gear → Setup)
+### ⚙️ Settings Center (gear → Setup)
 
 Everything lives in four tabs — no `.env` editing required:
 
@@ -141,7 +137,7 @@ Everything lives in four tabs — no `.env` editing required:
 - **Market data** — Alpaca key/secret + Polygon key (shared with Trade Replay charts/news).
 - **Danger zone** — one-click wipe of all local data.
 
-## 🌗 Day / night theme
+### 🌗 Day / night theme
 
 The header button cycles **Day → Night → Auto**. One `<html data-theme>` attribute drives every surface, including dialogs and charts.
 
@@ -190,7 +186,7 @@ Learn *why* your best trades worked — and why your worst trades failed — by 
 
 ___
 
-** Update - Cache policy**
+**🔮 Update — Cache policy**
 
 ````text
 New files:
@@ -239,6 +235,7 @@ Daily, weekly, monthly, and yearly P&L grids with green/red cells and dollar amo
       <p></p>
       <img src="public/five.jpg" alt="Image5" width="900"/>
     </div>
+
 ___
 
 **🔮 Update — Chatbot**
@@ -265,22 +262,7 @@ ___
 - 💾 **CSV Upload Option**: Alternatively, upload your trading data via CSV if you prefer not to connect your Robinhood account.
 - 💹 **Responsive Design**: Access the dashboard from desktop or mobile devices.
 
-| Feature | Status |
-|---|---|
-| Scatter plot with 855 trades, green/red coloring, and size scaling | ✅ Complete |
-| Win/Loss fingerprint view shown side-by-side | ✅ Complete |
-| Top 15 wins/losses table with sorting and clickable rows | ✅ Complete |
-| Stock chart with adaptive granularity (5m for recent trades, 1d for older trades) | ✅ Complete |
-| High-Low shaded band with Close price line | ✅ Complete |
-| VIX overlay with contextual interpretation | ✅ Complete |
-| BUY/SELL reference line markers | ✅ Complete |
-| News context with entry, exit, and broader trade bucketization | ✅ Complete |
-| Similar trades table for same ticker and trade type | ✅ Complete |
-| Trade Journal with 4 prompts and per-trade localStorage persistence | ✅ Complete |
-| Auto-load on mount when cached credentials are available | ✅ Complete |
-| Clickable ticker chips to filter the scatter plot | ✅ Complete |
 
----
 
 ### Prerequisites
 
@@ -326,15 +308,15 @@ React (CRA) ──► Flask (backend/) ──► Robinhood API · yfinance · Al
 
 ---
 
-## 🚀 Quick start
+### 🚀 Quick start
 
-### Option A — Desktop app (easiest)
+#### Option A — Desktop app (easiest)
 1. Grab the installer for your OS from [Releases](https://github.com/Manojbhat09/optionscope/releases)
    (`OptionScope-Setup.exe` · `.dmg` · `.AppImage`/`.deb`).
 2. Open it → click the **gear → Setup** → enter your Robinhood login → **Fetch Data**.
 3. Done. The backend ships frozen inside the app; nothing else to install.
 
-### Option B — Run from source (web app)
+#### Option B — Run from source (web app)
 ```bash
 git clone https://github.com/Manojbhat09/optionscope && cd optionscope
 
@@ -351,7 +333,7 @@ npm run build && flask run                 # backend serves build/ at http://loc
 > Prefer zero-terminal? The **portable zip** in each Release contains the built web app +
 > backend + `START_HERE.sh` / `START_HERE.bat` — unzip and double-click.
 
-### First 5 minutes (new-user path)
+#### First 5 minutes (new-user path)
 1. **Setup** (gear, top right) → *Account & Data* → Robinhood login + date range → Save.
 2. Dashboard → **Fetch Data**. Your order history is fetched once and cached locally.
 3. Skim the stat cards → click any dot in the **Gain Ratio** scatter → you're in **Trade Replay**.
@@ -363,9 +345,9 @@ npm run build && flask run                 # backend serves build/ at http://loc
 ---
 
 
-## 🖥️ Usage
+### 🖥️ Usage
 
-### Fetching Data from Robinhood
+#### Fetching Data from Robinhood
 
 1. **Enter Credentials**:
 
@@ -379,7 +361,7 @@ npm run build && flask run                 # backend serves build/ at http://loc
    - Click the **"Fetch Data"** button.
    - The app will securely authenticate with Robinhood and retrieve your options trading history.
 
-### Analyzing Your Trades
+#### Analyzing Your Trades
 
 Once data is fetched:
 
@@ -404,7 +386,7 @@ Once data is fetched:
   - **Top Profitable Trades**: Review your best trades.
   - **Top Loss-Making Trades**: Identify and learn from your biggest losses.
 
-### Reviewing Individual Trades
+#### Reviewing Individual Trades
 
 Scroll down to view a detailed table containing all your trades, including:
 
@@ -417,7 +399,7 @@ Scroll down to view a detailed table containing all your trades, including:
 - Price
 - Amount
 
-### Trading Notes
+#### Trading Notes
 
 - **Edit Notes**:
 
@@ -437,17 +419,17 @@ Scroll down to view a detailed table containing all your trades, including:
   - **Reset to Default**: Restore the original sample notes.
   - **Clear Notes**: Remove all notes.
 
-### Adjusting Data Range
+#### Adjusting Data Range
 
 - Use the **row sliders** to adjust the range of data analyzed.
 - Date range and row numbers are displayed for clarity.
 
-### Uploading CSV Data (Optional)
+#### Uploading CSV Data (Optional)
 
 - Click on **"Upload CSV"** to select and upload a CSV file containing your trading data.
 - The CSV should have columns similar to those fetched from Robinhood.
 
-## Security Notice
+#### Security Notice
 
 - **Credentials Usage**:
 
@@ -467,7 +449,7 @@ Scroll down to view a detailed table containing all your trades, including:
 
 
 
-## 🔮 Future Features
+### 🔮 Future Features
 
 We're constantly working to improve the Options Trading Analysis Dashboard. Here are some exciting features on our roadmap:
 
@@ -477,13 +459,13 @@ We're constantly working to improve the Options Trading Analysis Dashboard. Here
 - 🔄 Backtesting functionality to simulate strategies on historical data
 - 👥 Social features to share and compare trading strategies (anonymously)
 
-## Roadmap
+### Roadmap
 
 - **Integration with Other Brokers**: Support for TD Ameritrade, E*TRADE, etc.
 - **Advanced Analytics**: Add more metrics like Sharpe ratio, volatility analysis.
 - **Cloud Deployment**: Options to deploy the dashboard on cloud platforms.
 
-## 🤝 Contributing
+### 🤝 Contributing
 
 We welcome contributions from the community! If you'd like to contribute, please:
 
@@ -499,11 +481,11 @@ We welcome contributions from the community! If you'd like to contribute, please
 
 
 
-## 📜 License
+### 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgements
+### 🙏 Acknowledgements
 
 - [Robinhood API](https://github.com/robinhood-unofficial/pyrh) for providing access to trading data
 - [React](https://reactjs.org/) for the frontend framework
@@ -511,7 +493,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Recharts](https://recharts.org/) for beautiful, responsive charts
 
 
-## ⚠️ Disclaimer
+#### ⚠️ Disclaimer
 
 OptionScope is quantitative research tooling for **your own** trading data. Nothing in it is
 financial advice. Options trading involves substantial risk of loss.

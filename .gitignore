@@ -18,3 +18,9 @@ backend/data/
 backend/orders.csv
 node_modules/
 build/
+
+# personal artifacts — local only
+backend/screenshots/
+files/crwd_*
+files/spcx_*
+files/download*.jpg

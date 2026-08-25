@@ -1,6 +1,14 @@
-# v1.1.0 — Multi-select Trade Replay, Spot Replay polish, Settings Center, MCP control
+# v1.2.0 — Mac double-click launchers, Electron + fixes
 
 *Release notes draft — GitHub Release will append auto-generated commit notes below these.*
+
+## v1.2.0
+- **Double-click anywhere**: `START_HERE.command` / `APP_START_HERE.command` for macOS Finder (same as `.bat` on Windows) — `APP_*` opens the native Electron window, `START_*` the browser at `/`.
+- **Electron in the portable zip**: `desktop/` ships inside `optionscope-*-portable.zip` so `APP_START_HERE` works out of the box.
+- **Launch fixes**: `python -m pip` on Windows/macOS (fixes `To modify pip…python.exe -m pip` error), app served at `/` (not `/Manojbhat09/optionscope`), PyInstaller sidecar spec + frozen-build no-reloader fix.
+- Packaging for `.exe` / `.dmg` (x64+arm64) / `.AppImage+.deb` builds via `release.yml:42` once billing is unlocked.
+
+## v1.1.0 — Multi-select Trade Replay, Spot Replay polish, Settings Center, MCP control
 
 ## ✨ Multi-select Trade Replay
 - **Multi-select** toggle on the Gain Ratio card (plus Ctrl/Cmd+click any time): build a set of trades and the whole page reflects it — orange toolbar (count · W/L · P&L), `SELECTED n` badges on the Win/Loss fingerprints, subset stats everywhere.
@@ -32,4 +40,4 @@
 - Desktop launcher: the Flask sidecar can no longer outlive the app (the orphan-process bug that broke Fetch Data).
 
 ## 🚀 For the web app
-- Production build served by the Flask backend at `/Manojbhat09/optionscope`; portable zip in this release contains the same prebuilt app (`START_HERE.sh` / `START_HERE.bat`).
+- Production build served by the Flask backend at `/`; portable zip contains the prebuilt app + `desktop/` Electron shell (`START_HERE.*` / `APP_START_HERE.*` for Win/mac/Linux).

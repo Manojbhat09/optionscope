@@ -1,6 +1,9 @@
-# v1.2.0 — Mac double-click launchers, Electron + fixes
+# v1.2.3 — Mac double-click + Windows Node auto-find
 
 *Release notes draft — GitHub Release will append auto-generated commit notes below these.*
+
+## v1.2.3
+- **Windows double-click fix**: `APP_START_HERE.bat` / `START_HERE.bat` auto-find Node in `C:\Program Files\nodejs`, `Program Files (x86)`, and `nvm` paths; clearer help when `npm` missing (fixes `Node.js/npm not found` after Finder double-click).
 
 ## v1.2.0
 - **Double-click anywhere**: `START_HERE.command` / `APP_START_HERE.command` for macOS Finder (same as `.bat` on Windows) — `APP_*` opens the native Electron window, `START_*` the browser at `/`.
